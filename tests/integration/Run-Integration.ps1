@@ -81,10 +81,14 @@ try {
     Check ($r0.Code -eq 0) 'scan exits 0'
     $rep0 = Latest-Report
     Check ($null -ne $rep0) 'json report written'
-    Check ((Get-ChildItem $reports -Filter *.html).Count -ge 1) 'html report written'
+    Check (@(Get-ChildItem $reports -Filter *.html).Count -ge 1) 'html report written'
     $sysUnsigned = @($rep0.findings | Where-Object { $_.target -like "$env:SystemRoot\System32\*" -and ($_.evidence | Where-Object { $_.key -eq '서명' -and $_.value -eq '서명 없음' }) })
     Check ($sysUnsigned.Count -eq 0) "no System32 file reported as unsigned (found $($sysUnsigned.Count))"
     Write-Host "  baseline findings on runner: $(@($rep0.findings).Count)"
+    $dupes = @($rep0.findings | Group-Object { $_.location.ToLowerInvariant() } | Where-Object Count -gt 1)
+    Check ($dupes.Count -eq 0) 'no duplicate findings'
+    $tempMis = @($rep0.findings | Where-Object { $_.category -eq 'DroppedFile' -and $_.location -like '*\AppData\Local\Temp\*' -and $_.severity -eq 'Medium' -and $_.location -notmatch '\.(pdf|jpg|png|txt|docx?)' })
+    Check ($tempMis.Count -eq 0) "Temp files classified as Temp, not user profile (found $($tempMis.Count))"
     $rep0.findings | Select-Object -First 20 | ForEach-Object { Write-Host "    [$($_.severity)] $($_.title) :: $($_.location)" }
     $rep0.coverage | ForEach-Object { Write-Host "    (coverage) $_" }
 

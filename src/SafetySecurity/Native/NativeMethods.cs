@@ -262,4 +262,8 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport("kernel32.dll")]
     internal static partial uint GetOEMCP();
+
+    /// <summary>8.3 짧은 이름(C:\Users\RUNNER~1)을 긴 이름으로 바꿔요.</summary>
+    [LibraryImport("kernel32.dll", EntryPoint = "GetLongPathNameW", StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial uint GetLongPathName(string lpszShortPath, char* lpszLongPath, uint cchBuffer);
 }

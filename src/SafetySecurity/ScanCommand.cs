@@ -97,7 +97,7 @@ internal static class ScanCommand
         var files = new WinFileSystemView();
         var signatures = new CachingSignatureVerifier(new AuthenticodeVerifier(), files, sigCache, () => DateTimeOffset.UtcNow);
         var paths = new SystemPaths(Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
-            .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? string.Empty, StringComparer.OrdinalIgnoreCase));
+            .ToDictionary(e => (string)e.Key, e => LongPath((string?)e.Value ?? string.Empty), StringComparer.OrdinalIgnoreCase));
         var classifier = new PathClassifier(paths);
         var self = new HashSet<string>(StringComparer.Ordinal);
         foreach (var p in new[] { Environment.ProcessPath, Path.Combine(TaskInstaller.UserInstallDir, TaskInstaller.ExeName), Path.Combine(TaskInstaller.AdminInstallDir, TaskInstaller.ExeName) })
@@ -205,6 +205,22 @@ internal static class ScanCommand
             DeferredBecause = because,
             Attempts = (existing?.Attempts ?? 0) + 1,
         };
+    }
+
+    /// <summary>
+    /// 환경 변수 값이 8.3 짧은 이름(예: %TEMP% = C:\Users\RUNNER~1\...)이면 긴 이름으로 바꿔요.
+    /// 안 바꾸면 같은 폴더를 다른 곳으로 보고 위치 분류가 틀려져요.
+    /// </summary>
+    private static unsafe string LongPath(string value)
+    {
+        if (!value.Contains('~') || value.Contains(';') || value.Length < 3 || value[1] != ':')
+        {
+            return value;
+        }
+
+        var buffer = stackalloc char[1024];
+        var len = Native.NativeMethods.GetLongPathName(value, buffer, 1024);
+        return len is > 0 and < 1024 ? new string(buffer, 0, (int)len) : value;
     }
 
     public static void OpenFile(string path)

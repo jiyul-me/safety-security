@@ -307,9 +307,11 @@ public class MiscScannerTests
         env.Signatures.Signed(@"C:\Users\jiyul\AppData\Roaming\signed\app.exe", "Vendor");
         env.Files.Add(@"C:\Users\jiyul\AppData\Roaming\notes.txt", Encoding.UTF8.GetBytes(new string('a', 200)), recent);
         env.Files.Add(@"C:\Users\jiyul\AppData\Roaming\a\b\deep.exe", TestEnv.FakePe(), recent);
+        env.Files.Add(@"C:\Users\jiyul\AppData\Local\Temp\setup.exe1234", TestEnv.FakePe(), recent);
 
         var findings = new DroppedFileScanner().Scan(env.Context()).ToDictionary(f => f.Location);
-        Assert.Equal(3, findings.Count);
+        Assert.Equal(4, findings.Count);
+        Assert.Equal(Severity.Low, findings[@"C:\Users\jiyul\AppData\Local\Temp\setup.exe1234"].Severity);
         Assert.Equal(Severity.Medium, findings[@"C:\Users\jiyul\AppData\Roaming\x7f\host.exe"].Severity);
         Assert.Equal(Severity.High, findings[@"C:\Users\jiyul\AppData\Roaming\invoice.pdf.exe"].Severity);
         Assert.Equal(Severity.High, findings[@"C:\ProgramData\photo.jpg"].Severity);

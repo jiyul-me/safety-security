@@ -154,7 +154,8 @@ public sealed class DroppedFileScanner : IScanner
                 }
                 else if (sig.Status is SignatureStatus.Unsigned or SignatureStatus.Untrusted && severity is null)
                 {
-                    severity = Severity.Medium;
+                    // 설치 프로그램이 임시 폴더에 이상한 이름(예: setup.exe12345)으로 푸는 경우가 많아서 Temp는 낮게 봐요.
+                    severity = kind == PathKind.Temp ? Severity.Low : Severity.Medium;
                     reasons.Add($"확장자가 {(ext.Length > 0 ? ext : "없음")}인 서명 없는 실행 파일이에요.");
                 }
             }
