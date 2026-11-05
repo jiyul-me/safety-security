@@ -83,6 +83,12 @@ try {
     Check ($null -ne $rep0) 'json report written'
     Check (@(Get-ChildItem $reports -Filter *.html).Count -ge 1) 'html report written'
     $sysUnsigned = @($rep0.findings | Where-Object { $_.target -like "$env:SystemRoot\System32\*" -and ($_.evidence | Where-Object { $_.key -eq '서명' -and $_.value -eq '서명 없음' }) })
+    foreach ($f in $sysUnsigned) {
+        Write-Host "    unsigned System32 finding: [$($f.severity)] $($f.title) -> $($f.target)" -ForegroundColor Yellow
+        $f.evidence | ForEach-Object { Write-Host "      $($_.key) = $($_.value)" }
+        $null = Invoke-SS @('verify', $f.target)
+        Get-AuthenticodeSignature -FilePath $f.target -ErrorAction SilentlyContinue | Format-List Status, StatusMessage, SignatureType, SignerCertificate | Out-String | Write-Host
+    }
     Check ($sysUnsigned.Count -eq 0) "no System32 file reported as unsigned (found $($sysUnsigned.Count))"
     Write-Host "  baseline findings on runner: $(@($rep0.findings).Count)"
     $dupes = @($rep0.findings | Group-Object { $_.location.ToLowerInvariant() } | Where-Object Count -gt 1)
@@ -160,7 +166,7 @@ try {
             $null = schtasks /query /tn "\SafetySecurity\$t" 2>&1
             Check ($LASTEXITCODE -eq 0) "task \SafetySecurity\$t registered"
         }
-        $xml = schtasks /query /tn '\SafetySecurity\Daily' /xml | Out-String
+        $xml = Export-ScheduledTask -TaskPath '\SafetySecurity\' -TaskName 'Daily' | Out-String
         Check ($xml -match '<Priority>7</Priority>') 'task priority 7'
         $tn = Invoke-SS @('test-notify', '--data-dir', $data)
         if ($tn.Code -ne 0) { Write-Host "  (info) toast could not be shown on this runner: exit $($tn.Code)" -ForegroundColor Yellow }
