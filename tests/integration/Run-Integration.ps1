@@ -103,6 +103,7 @@ try {
     New-Item -Path "$comKey\InprocServer32" -Force | Out-Null
     Set-ItemProperty -Path "$comKey\InprocServer32" -Name '(default)' -Value $evilDll
     Set-ItemProperty -Path "$comKey\InprocServer32" -Name 'ThreadingModel' -Value 'Apartment'
+    if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
     Set-ItemProperty -Path $runKey -Name $runName -Value 'powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AA=='
     $r1 = Scan
     Check ($r1.Code -eq 0) 'scan exits 0'
