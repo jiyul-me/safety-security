@@ -1,0 +1,59 @@
+T:System.Net.Http.HttpClient;네트워크 사용 금지 (읽기 전용·오프라인 원칙)
+T:System.Net.Http.HttpClientHandler;네트워크 사용 금지
+T:System.Net.Http.SocketsHttpHandler;네트워크 사용 금지
+T:System.Net.WebClient;네트워크 사용 금지
+T:System.Net.WebRequest;네트워크 사용 금지
+T:System.Net.HttpWebRequest;네트워크 사용 금지
+T:System.Net.HttpListener;네트워크 사용 금지
+T:System.Net.Sockets.Socket;네트워크 사용 금지
+T:System.Net.Sockets.TcpClient;네트워크 사용 금지
+T:System.Net.Sockets.TcpListener;네트워크 사용 금지
+T:System.Net.Sockets.UdpClient;네트워크 사용 금지
+T:System.Net.Dns;네트워크 사용 금지
+T:System.Net.NetworkInformation.Ping;네트워크 사용 금지
+M:Microsoft.Win32.RegistryKey.SetValue(System.String,System.Object);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.SetValue(System.String,System.Object,Microsoft.Win32.RegistryValueKind);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.CreateSubKey(System.String);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.CreateSubKey(System.String,System.Boolean);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.CreateSubKey(System.String,Microsoft.Win32.RegistryKeyPermissionCheck);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.DeleteSubKey(System.String);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.DeleteSubKey(System.String,System.Boolean);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.DeleteSubKeyTree(System.String);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.DeleteSubKeyTree(System.String,System.Boolean);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.DeleteValue(System.String);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.DeleteValue(System.String,System.Boolean);레지스트리 쓰기 금지
+M:Microsoft.Win32.RegistryKey.OpenSubKey(System.String,System.Boolean);쓰기 가능으로 여는 것 금지. OpenSubKey(string)만 사용
+M:Microsoft.Win32.RegistryKey.OpenSubKey(System.String,Microsoft.Win32.RegistryKeyPermissionCheck);쓰기 가능으로 여는 것 금지
+M:Microsoft.Win32.RegistryKey.OpenSubKey(System.String,Microsoft.Win32.RegistryKeyPermissionCheck,System.Security.AccessControl.RegistryRights);쓰기 가능으로 여는 것 금지
+M:Microsoft.Win32.RegistryKey.OpenSubKey(System.String,System.Security.AccessControl.RegistryRights);쓰기 가능으로 여는 것 금지
+M:System.IO.File.Delete(System.String);파일 삭제 금지
+M:System.IO.File.Move(System.String,System.String);파일 이동 금지
+M:System.IO.File.Move(System.String,System.String,System.Boolean);파일 이동 금지
+M:System.IO.File.Replace(System.String,System.String,System.String);파일 교체 금지
+M:System.IO.File.Copy(System.String,System.String);파일 복사 금지
+M:System.IO.File.Copy(System.String,System.String,System.Boolean);파일 복사 금지
+M:System.IO.File.WriteAllText(System.String,System.String);파일 쓰기 금지
+M:System.IO.File.WriteAllText(System.String,System.String,System.Text.Encoding);파일 쓰기 금지
+M:System.IO.File.WriteAllBytes(System.String,System.Byte[]);파일 쓰기 금지
+M:System.IO.File.AppendAllText(System.String,System.String);파일 쓰기 금지
+M:System.IO.File.AppendAllText(System.String,System.String,System.Text.Encoding);파일 쓰기 금지
+M:System.IO.File.Create(System.String);파일 쓰기 금지
+M:System.IO.File.OpenWrite(System.String);파일 쓰기 금지
+M:System.IO.File.SetAttributes(System.String,System.IO.FileAttributes);파일 수정 금지
+M:System.IO.Directory.Delete(System.String);폴더 삭제 금지
+M:System.IO.Directory.Delete(System.String,System.Boolean);폴더 삭제 금지
+M:System.IO.Directory.Move(System.String,System.String);폴더 이동 금지
+M:System.IO.Directory.CreateDirectory(System.String);폴더 생성 금지
+M:System.IO.FileInfo.Delete;파일 삭제 금지
+M:System.IO.DirectoryInfo.Delete;폴더 삭제 금지
+M:System.IO.DirectoryInfo.Delete(System.Boolean);폴더 삭제 금지
+M:System.Diagnostics.Process.GetProcesses;다른 프로세스 핸들 접근 금지 (Toolhelp 스냅샷으로 이름만 읽기)
+M:System.Diagnostics.Process.GetProcesses(System.String);다른 프로세스 핸들 접근 금지
+M:System.Diagnostics.Process.GetProcessById(System.Int32);다른 프로세스 핸들 접근 금지
+M:System.Diagnostics.Process.GetProcessById(System.Int32,System.String);다른 프로세스 핸들 접근 금지
+M:System.Diagnostics.Process.GetProcessesByName(System.String);다른 프로세스 핸들 접근 금지
+M:System.Diagnostics.Process.GetProcessesByName(System.String,System.String);다른 프로세스 핸들 접근 금지
+M:System.IO.FileStream.#ctor(System.String,System.IO.FileMode);파일 쓰기 금지 (읽기는 FileAccess.Read를 명시)
+M:System.IO.StreamWriter.#ctor(System.String);파일 쓰기 금지
+M:System.IO.StreamWriter.#ctor(System.String,System.Boolean);파일 쓰기 금지
+M:System.IO.StreamWriter.#ctor(System.String,System.Boolean,System.Text.Encoding);파일 쓰기 금지

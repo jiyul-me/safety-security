@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SafetySecurity.Core/SafetySecurity.Core.csproj" />
+    <Project Path="src/SafetySecurity/SafetySecurity.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SafetySecurity.Core.Tests/SafetySecurity.Core.Tests.csproj" />
+  </Folder>
+</Solution>

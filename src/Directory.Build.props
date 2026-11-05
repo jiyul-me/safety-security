@@ -1,0 +1,16 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!--
+    안전장치: BannedSymbols.txt에 적힌 API(네트워크, 레지스트리 쓰기, 파일 삭제, 다른 프로세스 접근)를
+    src/ 아래 코드에서 쓰면 빌드 에러(RS0030)가 나요.
+    자기 데이터 폴더에 쓰는 코드와 설치기만 파일 안에서 #pragma로 예외를 둬요.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="4.14.0" PrivateAssets="all" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../BannedSymbols.txt" />
+  </ItemGroup>
+  <PropertyGroup>
+    <WarningsAsErrors>$(WarningsAsErrors);RS0030;RS0031</WarningsAsErrors>
+  </PropertyGroup>
+</Project>
