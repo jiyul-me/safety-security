@@ -83,13 +83,14 @@ try {
     Check ($null -ne $rep0) 'json report written'
     Check (@(Get-ChildItem $reports -Filter *.html).Count -ge 1) 'html report written'
     $sysUnsigned = @($rep0.findings | Where-Object { $_.target -like "$env:SystemRoot\System32\*" -and ($_.evidence | Where-Object { $_.key -eq '서명' -and $_.value -eq '서명 없음' }) })
+    # 우리가 '서명 없음'이라고 한 System32 파일은 Windows(Get-AuthenticodeSignature)도 NotSigned여야 해요.
+    $disagree = 0
     foreach ($f in $sysUnsigned) {
-        Write-Host "    unsigned System32 finding: [$($f.severity)] $($f.title) -> $($f.target)" -ForegroundColor Yellow
-        $f.evidence | ForEach-Object { Write-Host "      $($_.key) = $($_.value)" }
-        $null = Invoke-SS @('verify', $f.target)
-        Get-AuthenticodeSignature -FilePath $f.target -ErrorAction SilentlyContinue | Format-List Status, StatusMessage, SignatureType, SignerCertificate | Out-String | Write-Host
+        $win = (Get-AuthenticodeSignature -FilePath $f.target -ErrorAction SilentlyContinue).Status
+        Write-Host "    System32 unsigned: $($f.target) (Windows says: $win)"
+        if ("$win" -ne 'NotSigned') { $disagree++ }
     }
-    Check ($sysUnsigned.Count -eq 0) "no System32 file reported as unsigned (found $($sysUnsigned.Count))"
+    Check ($disagree -eq 0) "unsigned verdicts agree with Get-AuthenticodeSignature ($($sysUnsigned.Count) checked)"
     Write-Host "  baseline findings on runner: $(@($rep0.findings).Count)"
     $dupes = @($rep0.findings | Group-Object { $_.location.ToLowerInvariant() } | Where-Object Count -gt 1)
     Check ($dupes.Count -eq 0) 'no duplicate findings'
@@ -166,8 +167,10 @@ try {
             $null = schtasks /query /tn "\SafetySecurity\$t" 2>&1
             Check ($LASTEXITCODE -eq 0) "task \SafetySecurity\$t registered"
         }
-        $xml = Export-ScheduledTask -TaskPath '\SafetySecurity\' -TaskName 'Daily' | Out-String
-        Check ($xml -match '<Priority>7</Priority>') 'task priority 7'
+        $task = Get-ScheduledTask -TaskPath '\SafetySecurity\' -TaskName 'Daily'
+        Check ($task.Settings.Priority -eq 7) "task priority 7 (got $($task.Settings.Priority))"
+        Check ($task.Settings.ExecutionTimeLimit -eq 'PT15M') "task time limit 15 min (got $($task.Settings.ExecutionTimeLimit))"
+        Check ($task.Principal.RunLevel -eq 'Limited') "task runs with least privilege (got $($task.Principal.RunLevel))"
         $tn = Invoke-SS @('test-notify', '--data-dir', $data)
         if ($tn.Code -ne 0) { Write-Host "  (info) toast could not be shown on this runner: exit $($tn.Code)" -ForegroundColor Yellow }
         Check ($tn.Text -notmatch 'TypeInitialization|MissingMetadata|NotSupported|PlatformNotSupported|COMException.*0x80040154') 'toast code path does not crash (WinRT projection works under AOT)'
