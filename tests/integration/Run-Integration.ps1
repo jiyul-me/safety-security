@@ -194,3 +194,4 @@ if ($script:failures -gt 0) {
     exit 1
 }
 Write-Host 'All integration checks passed' -ForegroundColor Green
+exit 0
