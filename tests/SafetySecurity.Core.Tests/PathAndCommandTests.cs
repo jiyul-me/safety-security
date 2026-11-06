@@ -14,6 +14,8 @@ public class PathClassifierTests
     [InlineData(@"C:\Windows\Temp\a.exe", PathKind.Temp)]
     [InlineData(@"C:\Windows\System32\spool\drivers\color\x.dll", PathKind.Temp)]
     [InlineData(@"C:\Program Files\Google\Chrome\chrome.exe", PathKind.ProgramFiles)]
+    [InlineData(@"C:\Program Files\WindowsApps\Microsoft.Paint_11.2609.401.0_x64__8wekyb3d8bbwe\PaintApp\mspaint.exe", PathKind.PackagedApp)]
+    [InlineData(@"C:\Windows\SystemApps\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\StartMenuExperienceHost.exe", PathKind.PackagedApp)]
     [InlineData(@"C:\Program Files (x86)\Steam\steam.exe", PathKind.ProgramFiles)]
     [InlineData(@"C:\ProgramData\x\y.dll", PathKind.ProgramData)]
     [InlineData(@"C:\Users\jiyul\AppData\Roaming\evil.dll", PathKind.UserProfile)]

@@ -50,14 +50,14 @@ public sealed class ComHijackScanner : IScanner
                 }
 
                 using var machineClass = ctx.Registry.Open(RegHive.LocalMachine, rootPath + "\\" + clsid);
-                ScanClass(ctx, findings, userClass, machineClass, clsid, label);
+                ScanClass(ctx, findings, userClass, machineClass, clsid, label, rootPath);
             }
         }
 
         return findings;
     }
 
-    private static void ScanClass(ScanContext ctx, List<Finding> findings, IRegistryKeyView userClass, IRegistryKeyView? machineClass, string clsid, string label)
+    private static void ScanClass(ScanContext ctx, List<Finding> findings, IRegistryKeyView userClass, IRegistryKeyView? machineClass, string clsid, string label, string rootPath)
     {
         var className = machineClass?.GetString(null) ?? userClass.GetString(null);
         var keyWrite = userClass.LastWriteTime;
@@ -91,27 +91,11 @@ public sealed class ComHijackScanner : IScanner
                 var machineTarget = machineTreat?.GetString(null)?.Trim();
                 if (!string.Equals(target, machineTarget, StringComparison.OrdinalIgnoreCase))
                 {
-                    var evidence = BaseEvidence(clsid, className, keyWrite);
-                    evidence.Add(new("TreatAs 대상", target));
-                    if (machineTarget is not null)
+                    var f = EvaluateTreatAs(ctx, treatAs!, userClass, machineClass, clsid, className, keyWrite, label, rootPath, target, machineTarget);
+                    if (f is not null)
                     {
-                        evidence.Add(new("HKLM 원래 TreatAs", machineTarget));
+                        findings.Add(f);
                     }
-
-                    findings.Add(new Finding
-                    {
-                        RuleId = "COM-004",
-                        Category = CategoryName,
-                        Severity = machineClass is not null ? Severity.High : Severity.Medium,
-                        Title = $"TreatAs로 COM 클래스를 다른 클래스로 바꿔요 ({label})",
-                        Location = treatAs!.FullPath,
-                        Target = target,
-                        Reasons = machineClass is not null
-                            ? ["HKLM에 등록된 정상 COM 클래스를 HKCU의 TreatAs로 다른 클래스에 연결했어요. 하이재킹 수법 중 하나예요."]
-                            : ["HKCU에만 있는 TreatAs 설정이에요."],
-                        Evidence = evidence,
-                        Advice = Advice.ComHijack(userClass.FullPath),
-                    });
                 }
             }
         }
@@ -133,6 +117,107 @@ public sealed class ComHijackScanner : IScanner
                 findings.Add(finding);
             }
         }
+    }
+
+    /// <summary>
+    /// TreatAs가 가리키는 클래스가 실제로 무엇을 실행하는지 따라가서 판단해요.
+    /// 예: 새 그림판(Store 앱)은 옛 "Paintbrush 그림" 클래스를 자기 클래스로 넘겨받으려고 HKCU에 TreatAs를 만들어요.
+    /// 대상이 정상 파일이면 보고하지 않고(HKLM 클래스를 덮어쓰면 '낮음'), 의심스러운 파일이면 그대로 잡아요.
+    /// </summary>
+    private static Finding? EvaluateTreatAs(
+        ScanContext ctx,
+        IRegistryKeyView treatAs,
+        IRegistryKeyView userClass,
+        IRegistryKeyView? machineClass,
+        string clsid,
+        string? className,
+        DateTimeOffset? keyWrite,
+        string label,
+        string rootPath,
+        string target,
+        string? machineTarget)
+    {
+        var shadows = machineClass is not null;
+        var evidence = BaseEvidence(clsid, className, keyWrite);
+        evidence.Add(new("TreatAs 대상", target));
+        if (machineTarget is not null)
+        {
+            evidence.Add(new("HKLM 원래 TreatAs", machineTarget));
+        }
+
+        var reasons = new List<string>
+        {
+            shadows
+                ? "HKLM에 등록된 COM 클래스를 HKCU의 TreatAs로 다른 클래스에 연결했어요. 하이재킹 수법 중 하나예요."
+                : "HKCU에만 있는 TreatAs 설정이에요.",
+        };
+
+        var resolved = ResolveClassServer(ctx, rootPath, target);
+        Severity severity;
+        string? resolvedPath = null;
+        if (resolved is null)
+        {
+            // 대상 클래스가 아무것도 실행하지 않아요 (남은 흔적이거나 아직 설치되지 않은 클래스).
+            severity = shadows ? Severity.Medium : Severity.Low;
+            reasons.Add("TreatAs 대상 클래스에 실행 파일이 등록돼 있지 않아요.");
+        }
+        else
+        {
+            var (serverKeyName, hive, assessment) = resolved.Value;
+            resolvedPath = assessment.Path;
+            evidence.Add(new("대상 클래스가 실행하는 파일", $"{assessment.Path} ({hive.HiveName()} {serverKeyName})"));
+            evidence.AddRange(assessment.Evidence);
+            if (assessment.Severity is null)
+            {
+                if (!shadows)
+                {
+                    return null;
+                }
+
+                severity = Severity.Low;
+                reasons.Add("대상 클래스는 신뢰할 수 있는 파일을 실행해요. 설치한 앱이 기존 형식을 넘겨받은 것일 수 있어요.");
+            }
+            else
+            {
+                severity = shadows ? Severity.High : SeverityExtensions.Max(Severity.Medium, assessment.Severity.Value);
+                reasons.AddRange(assessment.Reasons.Select(r => "대상: " + r));
+            }
+        }
+
+        return new Finding
+        {
+            RuleId = "COM-004",
+            Category = CategoryName,
+            Severity = severity,
+            Title = $"TreatAs로 COM 클래스를 다른 클래스로 바꿔요 ({label})",
+            Location = treatAs.FullPath,
+            Target = resolvedPath is null ? target : $"{target} → {resolvedPath}",
+            Reasons = reasons,
+            Evidence = evidence,
+            Advice = Advice.ComHijack(userClass.FullPath),
+        };
+    }
+
+    /// <summary>클래스의 서버(InprocServer32 등)를 HKCU, HKLM 순서로 찾아 평가해요.</summary>
+    private static (string ServerKey, RegHive Hive, ExecutableAssessment Assessment)? ResolveClassServer(ScanContext ctx, string rootPath, string targetClsid)
+    {
+        foreach (var hive in new[] { RegHive.CurrentUser, RegHive.LocalMachine })
+        {
+            foreach (var serverKeyName in ServerKeys)
+            {
+                using var key = ctx.Registry.Open(hive, $@"{rootPath}\{targetClsid}\{serverKeyName}");
+                var raw = key?.GetString(null);
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                var path = ResolveServerPath(ctx, serverKeyName, raw);
+                return (serverKeyName, hive, ExecutableAssessor.Assess(ctx, path));
+            }
+        }
+
+        return null;
     }
 
     private static Finding? EvaluateServer(

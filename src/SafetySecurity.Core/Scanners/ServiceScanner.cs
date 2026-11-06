@@ -143,11 +143,13 @@ public sealed class ServiceScanner : IScanner
             }
         }
 
-        if (a.Parsed is { IsUnquotedWithSpaces: true } parsed && start != 4 && !reasons.Any(r => r.Contains("따옴표", StringComparison.Ordinal)))
+        if (a.Parsed is { IsUnquotedWithSpaces: true } parsed && start != 4 && !reasons.Any(r => r.Contains("따옴표", StringComparison.Ordinal))
+            && WritableHijackFolder(ctx, parsed.Executable) is { } folder)
         {
             // 따옴표 없는 경로 자체는 취약점(권한 상승 통로)이에요. 공격 흔적은 아니라서 낮게 둬요.
+            // C:\Program Files\... 처럼 끼워 넣을 위치가 모두 관리자 전용이면 실제로 악용할 수 없어서 보고하지 않아요.
             severity = severity is { } s ? s : Severity.Low;
-            reasons.Add($"서비스 경로에 공백이 있는데 따옴표가 없어요 ({parsed.Executable}). 권한 상승에 악용될 수 있는 설정이에요.");
+            reasons.Add($"서비스 경로에 공백이 있는데 따옴표가 없어요 ({parsed.Executable}). 일반 사용자가 쓸 수 있는 '{folder}'에 실행 파일을 넣으면 대신 실행될 수 있어요.");
         }
 
         if (severity is null)
@@ -210,6 +212,42 @@ public sealed class ServiceScanner : IScanner
             Evidence = evidence,
             Advice = Advice.Service(name),
         };
+    }
+
+    /// <summary>
+    /// 따옴표 없는 경로 "C:\A B\C D\x.exe"에서 Windows는 C:\A.exe, C:\A B\C.exe 순서로 먼저 실행해 봐요.
+    /// 그 후보 파일이 들어갈 폴더 중 일반 사용자가 쓸 수 있는 곳이 있으면 그 폴더를 돌려줘요.
+    /// 시스템 드라이브 루트(C:\)와 Windows·Program Files는 관리자만 파일을 만들 수 있어요.
+    /// 다른 드라이브(D:\ 등)는 기본 권한에서 일반 사용자도 파일을 만들 수 있어요.
+    /// </summary>
+    public static string? WritableHijackFolder(ScanContext ctx, string executable)
+    {
+        var systemDrive = ctx.Classifier.Normalize(ctx.Paths.SystemDrive);
+        for (var i = executable.IndexOf(' '); i > 0; i = executable.IndexOf(' ', i + 1))
+        {
+            var candidate = executable[..i];
+            var slash = candidate.LastIndexOf('\\');
+            if (slash < 2)
+            {
+                continue;
+            }
+
+            var folder = candidate[..slash];
+            var normalized = ctx.Classifier.Normalize(folder);
+            var kind = ctx.Classifier.Classify(folder);
+            if (PathClassifier.IsUserWritable(kind))
+            {
+                return folder;
+            }
+
+            var isDriveRoot = normalized.Length == 2 && normalized[1] == ':';
+            if (kind == PathKind.Other && !(isDriveRoot && normalized == systemDrive))
+            {
+                return folder.Length == 2 ? folder + "\\" : folder;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>드라이버 ImagePath (\SystemRoot\..., System32\drivers\..., \??\C:\...)를 일반 경로로.</summary>

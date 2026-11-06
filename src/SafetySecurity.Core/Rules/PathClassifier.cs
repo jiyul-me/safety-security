@@ -11,6 +11,13 @@ public enum PathKind
     /// <summary>Program Files, Program Files (x86).</summary>
     ProgramFiles,
 
+    /// <summary>
+    /// Windows 앱 패키지 폴더 (Program Files\WindowsApps, Windows\SystemApps).
+    /// Microsoft Store·MSIX 앱이 설치되는 곳이에요. 파일마다 서명하지 않고 패키지 전체를 서명하고,
+    /// Windows(TrustedInstaller)만 쓸 수 있게 보호돼요.
+    /// </summary>
+    PackagedApp,
+
     /// <summary>ProgramData. 일반 사용자도 새 파일·폴더를 만들 수 있어요.</summary>
     ProgramData,
 
@@ -144,6 +151,11 @@ public sealed class PathClassifier(SystemPaths paths)
             return PathKind.Public;
         }
 
+        if (IsUnder(n, Paths.ProgramFiles + @"\WindowsApps") || IsUnder(n, Paths.SystemRoot + @"\SystemApps"))
+        {
+            return PathKind.PackagedApp;
+        }
+
         if (IsUnder(n, Paths.SystemRoot))
         {
             var root = Normalize(Paths.SystemRoot);
@@ -187,10 +199,31 @@ public sealed class PathClassifier(SystemPaths paths)
     public static bool IsUserWritable(PathKind kind) =>
         kind is PathKind.UserProfile or PathKind.Temp or PathKind.Public or PathKind.ProgramData;
 
+    /// <summary>
+    /// 패키지 폴더 이름 (예: Microsoft.Paint_11.2609.401.0_x64__8wekyb3d8bbwe).
+    /// 끝의 '__' 뒤가 게시자 ID예요 (8wekyb3d8bbwe = Microsoft). 패키지 폴더가 아니면 null.
+    /// </summary>
+    public string? PackageFolderName(string? path)
+    {
+        var n = Normalize(path);
+        foreach (var root in new[] { Normalize(Paths.ProgramFiles + @"\WindowsApps"), Normalize(Paths.SystemRoot + @"\SystemApps") })
+        {
+            if (n.StartsWith(root + "\\", StringComparison.Ordinal))
+            {
+                var rest = n[(root.Length + 1)..];
+                var slash = rest.IndexOf('\\');
+                return slash > 0 ? rest[..slash] : rest;
+            }
+        }
+
+        return null;
+    }
+
     public static string ToKorean(PathKind kind) => kind switch
     {
         PathKind.Windows => "Windows 시스템 폴더",
         PathKind.ProgramFiles => "Program Files",
+        PathKind.PackagedApp => "Windows 앱 패키지 (시스템이 보호하는 Store 앱 설치 폴더)",
         PathKind.ProgramData => "ProgramData (사용자도 쓸 수 있음)",
         PathKind.UserProfile => "사용자 폴더 (사용자 쓰기 가능)",
         PathKind.Temp => "임시 폴더 (누구나 쓰기 가능)",
