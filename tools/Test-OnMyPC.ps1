@@ -9,10 +9,16 @@
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\tools\Test-OnMyPC.ps1
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File .\tools\Test-OnMyPC.ps1 -Only 4
+  (4단계 '서비스 설치 시험'만 다시 해요. 관리자 PowerShell에서 실행하세요.)
 #>
 param(
     [string]$Exe,
-    [switch]$NonInteractive
+    [switch]$NonInteractive,
+    # 실행할 단계 번호 (예: "4" 또는 "1,4"). 비우면 전부 실행해요.
+    [string]$Only
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,11 +84,31 @@ function Latest-Report {
     return ([IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8) | ConvertFrom-Json)
 }
 
+$script:onlySteps = @()
+if ($Only) { $script:onlySteps = @($Only -split '[,\s]+' | Where-Object { $_ } | ForEach-Object { [int]$_ }) }
+function Want([int]$step) { return ($script:onlySteps.Count -eq 0) -or ($script:onlySteps -contains $step) }
+
 function Redact([string]$s) {
     if (-not $s) { return $s }
     if ($env:USERNAME) { $s = $s -replace [regex]::Escape($env:USERNAME), '<user>' }
     if ($env:COMPUTERNAME) { $s = $s -replace [regex]::Escape($env:COMPUTERNAME), '<pc>' }
     return $s
+}
+
+# 4단계(서비스 설치 시험)는 관리자 권한이 필요해요. 관리자가 아니면 다시 열어 줄지 물어봐요.
+if (-not $isAdmin -and -not $NonInteractive -and (Want 4)) {
+    Say ''
+    Say '지금은 관리자 권한이 아니에요. 4단계(서비스 설치 시험)는 관리자 권한이 필요해요.' 'Yellow'
+    if (Ask '관리자 권한 PowerShell로 다시 열까요? (UAC 창에서 "예")') {
+        $relaunch = @('-NoExit', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'), '-Exe', ('"' + $Exe + '"'))
+        if ($Only) { $relaunch += @('-Only', $Only) }
+        try {
+            Start-Process powershell -Verb RunAs -ArgumentList $relaunch -WorkingDirectory (Split-Path $Exe)
+            Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
+            exit 0
+        }
+        catch { Say '관리자 권한으로 열지 못했어요. 이대로 진행할게요 (4단계는 건너뛰어요).' 'Yellow' }
+    }
 }
 
 Say ''
@@ -99,6 +125,7 @@ $runName = 'SafetySecurityPcTest'
 
 try {
     # ------------------------------------------------------------ 1. 기본 동작
+    if (Want 1) {
     Title '1. 기본 동작'
     $hash = (Get-FileHash $Exe -Algorithm SHA256).Hash.ToLower()
     Say "  SHA-256: $hash"
@@ -115,7 +142,10 @@ try {
         Check (Ask '  화면 오른쪽 아래에 "알림 테스트예요" 알림이 떴나요?') '알림이 화면에 보임'
     }
 
+    }
+
     # ------------------------------------------------------------ 2. 가짜 악성 등록 탐지
+    if (Want 2) {
     Title '2. 가짜 COM 하이재킹·자동 실행 탐지'
     do { $guid = '{' + [guid]::NewGuid().ToString().ToUpper() + '}' }
     while ((Test-Path "HKLM:\SOFTWARE\Classes\CLSID\$guid") -or (Test-Path "HKCU:\Software\Classes\CLSID\$guid"))
@@ -146,7 +176,14 @@ try {
     $byRule = $real | Group-Object ruleId, severity | Sort-Object Name
     Note "이 PC의 실제 항목: $($real.Count)개 (가짜 항목 제외)"
     foreach ($g in $byRule) { $script:results.Add("rule $($g.Name) x$($g.Count)") }
-    foreach ($f in ($real | Where-Object { $_.severity -eq 'High' })) { $script:results.Add((Redact "high  $($f.ruleId) $($f.title) :: $($f.target)")) }
+    # 오탐 판단에 필요한 정보만 남겨요 (사용자 이름·PC 이름은 Redact로 가려요).
+    foreach ($f in $real) {
+        $sig = @($f.evidence | Where-Object { $_.key -eq '서명' -or $_.key -eq 'DLL 서명' -or $_.key -eq '페이로드 서명' } | Select-Object -First 1)
+        $signer = @($f.evidence | Where-Object { $_.key -like '*서명자' } | Select-Object -First 1)
+        $sigText = if ($sig.Count -gt 0) { $sig[0].value } else { '-' }
+        $signerText = if ($signer.Count -gt 0) { $signer[0].value } else { '-' }
+        $script:results.Add((Redact "item  $($f.ruleId) $($f.severity) | $($f.title) | $($f.target) | 서명: $sigText | 서명자: $signerText"))
+    }
     foreach ($c in $rep.coverage) { $script:results.Add((Redact "coverage $c")) }
 
     if (-not $NonInteractive) {
@@ -155,7 +192,10 @@ try {
         Pause-Step '보고서를 다 봤으면 Enter (실제 항목 중 의심되는 게 있으면 메모해 두세요)'
     }
 
+    }
+
     # ------------------------------------------------------------ 3. 게임 중 연기
+    if (Want 3) {
     Title '3. 게임 중에는 검사를 미루는지'
     if ($NonInteractive) {
         Note '자동 실행 모드라 건너뛰었어요.'
@@ -172,11 +212,15 @@ try {
         $r = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
         Check ($r.Code -eq 0) "게임을 끈 뒤 미뤄둔 검사 실행 (종료 코드 $($r.Code))"
         $vg = Get-Service -Name vgc -ErrorAction SilentlyContinue
-        if ($vg) { Note "Riot Vanguard 서비스 상태: $($vg.Status). 게임 중 VAN 오류가 없었다면 정상이에요." }
+        if ($vg) { Note "Riot Vanguard 서비스 상태: $($vg.Status)" }
+        Check (-not (Ask '  게임 중에 VAN 오류가 뜨거나, 게임이 튕기거나, 끊김이 있었나요?')) '게임 중 문제 없음 (VAN 오류·튕김·끊김 없음)'
     }
     else { Note '게임 시험은 건너뛰었어요.' }
 
+    }
+
     # ------------------------------------------------------------ 4. 서비스 설치 감지
+    if (Want 4) {
     Title '4. 새 서비스 설치 때 깨어나는지 (설치된 작업 필요)'
     $task = Get-ScheduledTask -TaskPath '\SafetySecurity\' -TaskName 'ServiceInstalled' -ErrorAction SilentlyContinue
     if ($NonInteractive) { Note '자동 실행 모드라 건너뛰었어요.' }
@@ -201,6 +245,7 @@ try {
         }
     }
     else { Note '서비스 시험은 건너뛰었어요.' }
+    }
 }
 finally {
     # ------------------------------------------------------------ 정리 (항상 실행)
@@ -222,6 +267,10 @@ $header = "SafetySecurity PC test $(Get-Date -Format 'yyyy-MM-dd HH:mm')  failur
 Say ''
 if ($script:failures -eq 0) { Say '모든 시험을 통과했어요!' 'Green' } else { Say "실패 $($script:failures)개" 'Red' }
 Say "결과 요약: $resultPath"
+if (-not $isAdmin -and (Want 4) -and -not $NonInteractive) {
+    Say '서비스 설치 시험(4단계)은 관리자 PowerShell에서 이렇게 따로 할 수 있어요:' 'Yellow'
+    Say '  powershell -ExecutionPolicy Bypass -File .\tools\Test-OnMyPC.ps1 -Only 4'
+}
 Say '이 파일을 GitHub 이슈에 붙여 주면 돼요 (사용자 이름·PC 이름은 이미 가렸어요).'
 if ($script:failures -gt 0) { exit 1 }
 exit 0
