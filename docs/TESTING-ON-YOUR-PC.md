@@ -1,0 +1,72 @@
+# 내 PC에서 시험하기
+
+CI(GitHub의 Windows 서버)로는 확인할 수 없는 것들을 실제 PC에서 확인하는 순서예요. 30분쯤 걸려요.
+
+| CI로 확인한 것 | PC에서 확인할 것 |
+|---|---|
+| 빌드, 단위 테스트 80개, 가짜 COM 하이재킹·Run 키 탐지, 베이스라인, 무시 목록, 게임 프로세스로 연기, 작업 등록과 삭제 | 알림이 실제로 화면에 뜨는지, **전체 화면 게임** 감지, **뱅가드와 함께** 써도 괜찮은지, 일반 사용자 작업이 **서비스 설치 이벤트**로 깨어나는지, 실제 PC의 **오탐** 개수 |
+
+## 0. 준비
+
+1. [Releases](https://github.com/jiyul-me/safety-security/releases)에서 가장 최근 `SafetySecurity-…-win-x64.zip`을 받아 압축을 풀어요.
+   (사전 릴리스 `-rc`도 괜찮아요. 아직 릴리스가 없으면 [Actions](https://github.com/jiyul-me/safety-security/actions/workflows/ci.yml) → 최근 성공한 실행 → Artifacts에서 받아도 돼요.)
+2. 처음 실행할 때 **SmartScreen**("Windows의 PC 보호")이 뜨면 '추가 정보' → '실행'을 눌러요. 코드 서명 인증서가 없어서 생기는 일이에요.
+3. Defender가 파일을 지웠다면 Windows 보안 → 보호 기록에서 어떤 이름으로 탐지했는지 메모해 주세요 (그것도 중요한 결과예요).
+
+## 1. 설치
+
+**관리자 PowerShell**(시작 메뉴 → PowerShell 오른쪽 클릭 → 관리자 권한으로 실행)에서 압축을 푼 폴더로 이동한 뒤:
+
+```powershell
+.\SafetySecurity.exe install --admin
+```
+
+작업 스케줄러(`taskschd.msc`) → 작업 스케줄러 라이브러리 → `SafetySecurity` 폴더에 작업 5개(Logon, Daily, ServiceInstalled, Retry, Admin)가 보이면 성공이에요.
+
+## 2. 안내형 시험 스크립트
+
+같은 관리자 PowerShell에서:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\Test-OnMyPC.ps1
+```
+
+스크립트는 단계마다 설명하고 Enter를 기다려요. 이런 순서로 진행해요.
+
+1. **기본 동작**: 버전, Windows 파일 서명 확인, 알림 테스트 ("알림이 떴나요?"에 y/n으로 답해요)
+2. **가짜 탐지**: 존재하지 않는 GUID로 만든 가짜 COM 등록과, 무해한 명령을 넣은 가짜 Run 항목을 만들고 검사해요. 둘 다 '높음'으로 나오면 통과예요. 그다음 보고서가 열리는데, 빨간 카드 2개가 가짜 항목이고 **나머지는 내 PC의 실제 항목**이에요. 의심되는 게 있으면 메모해 두세요.
+3. **게임 시험**: 게임을 켜고 Enter를 누른 뒤 20초 안에 게임 화면으로 돌아가요. 검사가 미뤄지면 통과예요. 게임을 끄면 미뤄둔 검사가 실행되는지 확인해요.
+4. **서비스 설치 시험**: 아무 일도 하지 않는 시험 서비스를 잠깐 만들었다가 지워요. 사용자 작업이 깨어났는지 확인해요.
+5. **정리**: 가짜 항목은 성공하든 실패하든 **항상** 지워요.
+
+끝나면 결과가 `%LOCALAPPDATA%\SafetySecurity\pc-test-result.txt`에 저장돼요. 사용자 이름과 PC 이름은 `<user>`, `<pc>`로 가려져 있어요.
+
+## 3. 직접 확인할 것
+
+### 뱅가드 (발로란트)
+1. 발로란트를 켜고 경쟁전이나 사격장에 들어가요.
+2. 다른 모니터나 Alt+Tab으로 관리자 PowerShell을 열고 `SafetySecurity.exe scan --force`를 실행해요. 게임 중이어도 일부러 검사하는 거예요.
+3. 확인할 것: **VAN 오류가 없는지**, 게임이 튕기지 않는지, 끊김(프레임 드롭)이 없는지.
+4. `--force` 없이 `SafetySecurity.exe scan --reason daily`를 실행하면 "검사를 미뤘어요"가 나와야 해요.
+
+### 리소스 사용량
+작업 관리자 → 세부 정보 탭에서 `SafetySecurity.exe`를 찾아 검사하는 동안 CPU·디스크를 봐요. 첫 검사는 서명 확인 때문에 30~60초쯤 걸릴 수 있고, 두 번째부터는 몇 초 만에 끝나야 해요.
+
+### 며칠 사용해 보기
+- 평소처럼 쓰다가 알림이 오면 보고서를 열어 봐요.
+- `SafetySecurity.exe status`로 마지막 검사와 미뤄둔 검사를 확인해요.
+- `%LOCALAPPDATA%\SafetySecurity\logs\scan.log`에서 언제 검사했고 언제 미뤘는지 볼 수 있어요.
+
+## 4. 결과 알려주기
+
+- 시험 결과: `pc-test-result.txt` 내용을 [버그 신고](https://github.com/jiyul-me/safety-security/issues/new?template=bug_report.yml)나 대화에 붙여 주세요.
+- 정상 프로그램이 잡혔다면: [오탐 신고](https://github.com/jiyul-me/safety-security/issues/new?template=false_positive.yml)
+- 실제로 의심스러운 게 나왔다면: 지우기 전에 보고서의 "확인하는 법"을 먼저 따라 하세요. 이 프로그램은 아무것도 지우지 않아요.
+
+## 지우고 싶을 때
+
+```powershell
+.\SafetySecurity.exe uninstall --purge
+```
+
+관리자로 설치했다면 관리자 PowerShell에서 실행하고, 마지막에 안내하는 폴더를 직접 지우면 끝이에요.

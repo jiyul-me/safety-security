@@ -1,15 +1,62 @@
-# SafetySecurity
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+    <img alt="SafetySecurity — read-only Windows persistence scanner" src="docs/assets/banner-light.svg" width="100%">
+  </picture>
+</p>
 
-**읽기 전용 Windows 지속성(persistence) 검사기.** 악성코드가 PC에 몰래 남겨 두는 "자동 실행 흔적"을 찾아서 알려줘요.
-아무것도 지우거나 고치지 않고, 인터넷도 쓰지 않아요.
+<p align="center">
+  <a href="https://github.com/jiyul-me/safety-security/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/jiyul-me/safety-security/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Windows 10/11 x64" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078D6?logo=windows">
+  <img alt=".NET 10 NativeAOT" src="https://img.shields.io/badge/.NET%2010-NativeAOT-512BD4?logo=dotnet">
+  <img alt="read-only" src="https://img.shields.io/badge/system%20changes-none-2ea44f">
+  <img alt="network" src="https://img.shields.io/badge/network-offline-2ea44f">
+</p>
 
-> 만든 계기: 한 게임 PC 런처가 해킹됐을 때 악성코드가 `HKCU\Software\Classes\CLSID\{…}\InprocServer32`에 몰래 등록돼서
-> Chrome이 악성 DLL을 불러오게 만든 일이 있었어요 (COM 하이재킹, MITRE ATT&CK T1546.015).
-> 이런 등록은 관리자 권한 없이도 만들 수 있고 눈에 잘 안 띄어요. SafetySecurity는 이런 흔적을 주기적으로 확인해요.
+<p align="center">
+  <b>악성코드가 PC에 몰래 남겨 두는 "자동 실행 흔적"을 찾아서 알려주는 읽기 전용 검사기</b><br>
+  아무것도 지우거나 고치지 않고, 인터넷도 쓰지 않아요. 게임 중에는 조용히 기다려요.
+</p>
 
-[English summary](#english)
+<p align="center">
+  <a href="#빠른-시작">빠른 시작</a> ·
+  <a href="#무엇을-검사하나요">검사 항목</a> ·
+  <a href="docs/DETECTIONS.md">탐지 규칙</a> ·
+  <a href="docs/TESTING-ON-YOUR-PC.md">PC에서 시험하기</a> ·
+  <a href="docs/ARCHITECTURE.md">구조</a> ·
+  <a href="CONTRIBUTING.md">기여하기</a> ·
+  <a href="#english">English</a>
+</p>
 
 ---
+
+> **만든 계기**: 한 게임 PC 런처가 해킹됐을 때 악성코드가 `HKCU\Software\Classes\CLSID\{…}\InprocServer32`에 몰래 등록돼서
+> Chrome이 악성 DLL을 불러오게 만든 일이 있었어요 (COM 하이재킹, MITRE ATT&CK [T1546.015](https://attack.mitre.org/techniques/T1546/015/)).
+> 이런 등록은 관리자 권한 없이도 만들 수 있고 눈에 잘 안 띄어요. SafetySecurity는 이런 흔적을 주기적으로 확인해요.
+
+## 빠른 시작
+
+```powershell
+# 1. Releases에서 zip을 받아 압축을 풀고, 관리자 PowerShell에서
+.\SafetySecurity.exe install --admin
+
+# 2. 지금 한 번 검사해 보기 (보고서가 열려요)
+.\SafetySecurity.exe
+
+# 3. 상태 확인
+.\SafetySecurity.exe status
+```
+
+그다음부터는 신경 쓸 필요가 없어요. 로그온할 때, 하루 한 번, 새 서비스가 설치될 때 알아서 잠깐 검사하고, 새로운 의심 항목이 있을 때만 알림을 띄워요.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/report-dark.png">
+    <img alt="SafetySecurity HTML 보고서 예시" src="docs/assets/report-light.png" width="720">
+  </picture>
+  <br><sub>보고서 예시 (<a href="docs/sample-report.html">sample-report.html</a>). 항목마다 이유, 증거, 직접 확인하는 법이 있어요.</sub>
+</p>
 
 ## 특징
 
@@ -28,6 +75,8 @@
 - [`ForbiddenApiTests.cs`](tests/SafetySecurity.Core.Tests/ForbiddenApiTests.cs): `OpenProcess`, `WriteProcessMemory`, `SetWindowsHookEx` 같은 Win32 함수를 선언하면 **테스트가 실패**해요.
 
 ## 무엇을 검사하나요?
+
+규칙 ID별 자세한 설명은 [docs/DETECTIONS.md](docs/DETECTIONS.md)에 있어요.
 
 | 분류 | 보는 곳 | 특히 위험하게 보는 경우 |
 |---|---|---|
@@ -145,19 +194,19 @@ dotnet publish src/SafetySecurity -c Release -r win-x64 -p:PublishAot=false --se
 src/SafetySecurity.Core/   규칙·스캐너·보고서 (Windows API 없음, 어디서나 테스트 가능)
 src/SafetySecurity/        Windows 연결부: 레지스트리, 서명 확인(WinVerifyTrust), 게임 감지, 작업 스케줄러, 알림
 tests/                     단위 테스트 (가짜 레지스트리·파일 시스템), Windows 통합 테스트
+tools/Test-OnMyPC.ps1      내 PC에서 안전하게 시험하는 안내형 스크립트
+docs/                      탐지 규칙, 구조, 시험 안내, 저장소 관리
 ```
 
-### 내 PC에서 확인해 볼 것
+자세한 구조는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), 기여 방법과 브랜치 전략은 [CONTRIBUTING.md](CONTRIBUTING.md)를 보세요.
 
-1. `install --admin` → 작업 스케줄러(`taskschd.msc`)에서 `\SafetySecurity\` 작업 5개 확인
-2. `SafetySecurity.exe` 더블클릭 → 보고서가 열리는지 확인
-3. 발로란트나 다른 게임을 켠 채로 `scan --reason daily` → "검사를 미뤘어요" 확인 → `status`에 미뤄둔 검사 표시
-4. 게임을 끄고 30분 안에 검사되는지 `logs\scan.log`에서 확인
-5. 검사 중 작업 관리자에서 CPU·디스크 사용량 확인
+### 내 PC에서 시험하기
+
+안내형 스크립트 `tools/Test-OnMyPC.ps1`이 가짜 항목을 만들어 탐지를 확인하고 반드시 지워요. 순서는 [docs/TESTING-ON-YOUR-PC.md](docs/TESTING-ON-YOUR-PC.md)에 있어요.
 
 ## 라이선스
 
-[MIT](LICENSE)
+[MIT](LICENSE) · 보안 문제 신고는 [SECURITY.md](SECURITY.md) · [행동 강령](CODE_OF_CONDUCT.md) · [변경 기록](CHANGELOG.md)
 
 ---
 

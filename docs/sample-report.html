@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafetySecurity 검사 보고서</title>
+<style>:root{--bg:#f6f7f9;--card:#fff;--text:#1d2128;--muted:#5d6675;--line:#e2e5ea;--high:#c62828;--high-bg:#fdecea;--med:#b26a00;--med-bg:#fff4e0;--low:#46607a;--low-bg:#eaf0f6;--new:#5b3cc4;--new-bg:#efeafd;--code:#f0f2f5}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--card:#1d2026;--text:#e6e8ec;--muted:#9aa3b2;--line:#2c313a;--high:#ff6b6b;--high-bg:#3a1f22;--med:#ffb84d;--med-bg:#3a2e1a;--low:#9db8d6;--low-bg:#1f2a36;--new:#b9a4ff;--new-bg:#2a2340;--code:#262a31}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 "Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 64px}h1{font-size:24px;margin:0 0 4px}h2{font-size:18px}h3{font-size:17px;margin:6px 0 8px;word-break:break-all}h4{font-size:14px;margin:14px 0 4px;color:var(--muted)}
+.meta{color:var(--muted);margin:0 0 16px}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column}.tile .n{font-size:26px;font-weight:700}.tile .l{color:var(--muted);font-size:13px}
+.tile.high .n{color:var(--high)}.tile.medium .n{color:var(--med)}.tile.low .n{color:var(--low)}.tile.new .n{color:var(--new)}
+.note,.info,.warn{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}.warn{border-color:var(--med)}.info{border-color:var(--new)}
+.finding{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--low);border-radius:10px;padding:14px 16px;margin:14px 0}
+.finding.high{border-left-color:var(--high)}.finding.medium{border-left-color:var(--med)}
+.head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.badge{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+.badge.high{background:var(--high-bg);color:var(--high)}.badge.medium{background:var(--med-bg);color:var(--med)}.badge.low{background:var(--low-bg);color:var(--low)}.badge.new{background:var(--new-bg);color:var(--new)}
+.cat{color:var(--muted);font-size:13px}dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:6px 0}dt{color:var(--muted)}dd{margin:0;min-width:0;word-break:break-all}
+code{background:var(--code);border-radius:4px;padding:1px 5px;font:13px/1.5 Consolas,"D2Coding",monospace;word-break:break-all}
+ul{margin:4px 0;padding-left:20px}details{margin-top:10px}summary{cursor:pointer;color:var(--muted)}.advice{margin:4px 0}.ignore{color:var(--muted);font-size:13px}
+.empty{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}.footer{margin-top:28px;color:var(--muted)}
+@media (max-width:600px){.summary{grid-template-columns:repeat(2,1fr)}dl{grid-template-columns:1fr}}</style>
+</head>
+<body>
+<main>
+<header><h1>SafetySecurity 검사 보고서</h1><p class="meta">2026-11-06 09:12 · 로그온 검사 · 사용자 검사 · 4.0초 · MY-PC · v0.1.0</p></header>
+<section class="summary"><div class="tile high"><span class="n">2</span><span class="l">높음</span></div><div class="tile medium"><span class="n">1</span><span class="l">보통</span></div><div class="tile low"><span class="n">1</span><span class="l">낮음·참고</span></div><div class="tile new"><span class="n">2</span><span class="l">새 항목</span></div></section>
+<p class="note">이 프로그램은 <strong>읽기 전용</strong>이에요. 아무것도 지우거나 고치지 않았고 인터넷도 쓰지 않았어요. 아래 항목이 모두 악성이라는 뜻은 아니에요. 직접 설치한 프로그램인지 확인하고, 각 항목의 '확인하는 법'을 따라 판단하세요.</p>
+<article class="finding high">
+<div class="head"><span class="badge high">높음</span><span class="badge new">새 항목</span><span class="cat">COM 하이재킹 · COM-001</span></div>
+<h3>HKCU가 기존 COM 클래스를 덮어써요 (InprocServer32, 64비트)</h3>
+<dl><dt>위치</dt><dd><code>HKCU\Software\Classes\CLSID\{9BA05972-F6A8-11CF-A442-00A0C90A8F39}\InprocServer32</code></dd><dt>대상</dt><dd><code>C:\Users\me\AppData\Roaming\Microsoft\Crypto\mscorsvc.dll</code></dd></dl>
+<h4>왜 의심스러운가요?</h4><ul><li>HKLM에 이미 있는 COM 클래스(ShellWindows)를 HKCU에서 덮어써서 다른 파일을 불러오게 해요. COM 하이재킹의 전형적인 형태예요.</li><li>디지털 서명이 없는 파일이 사용자 폴더 (사용자 쓰기 가능)에 있어요.</li><li>최근 7일 안에 만들어지거나 수정된 파일이에요.</li></ul>
+<details><summary>증거 자세히 보기</summary><dl><dt>CLSID</dt><dd>{9BA05972-F6A8-11CF-A442-00A0C90A8F39}</dd><dt>HKLM 원래 값</dt><dd><code>%SystemRoot%\System32\shdocvw.dll</code></dd><dt>서명</dt><dd>서명 없음</dd><dt>SHA-256</dt><dd><code>4b1f0c7e9a2d5c86e13f7a90b6d4e2c158a3f9d07e6b21c4a8f53d9e0b7c6a12</code></dd></dl></details>
+<h4>확인하는 법</h4><p class="advice">1) 대상 DLL의 서명자와 위치가 설치한 프로그램과 맞는지 확인하세요. 2) SHA-256 값을 VirusTotal 웹사이트에 직접 붙여 넣어 검색해 보세요.</p>
+<p class="ignore">직접 확인해서 괜찮은 항목이면: <code>SafetySecurity.exe ignore 9f2c1a7be04d6153</code></p>
+</article>
+<article class="finding high">
+<div class="head"><span class="badge high">높음</span><span class="badge new">새 항목</span><span class="cat">자동 실행 · RUN-001</span></div>
+<h3>자동 실행 등록: WindowsUpdateHelper</h3>
+<dl><dt>위치</dt><dd><code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WindowsUpdateHelper</code></dd><dt>대상</dt><dd><code>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</code></dd></dl>
+<h4>왜 의심스러운가요?</h4><ul><li>PowerShell이 인코딩된 명령(-EncodedCommand)을 실행해요. 내용을 숨기는 전형적인 수법이에요.</li><li>PowerShell 창을 숨겨서(-WindowStyle Hidden) 실행해요.</li></ul>
+<details><summary>증거 자세히 보기</summary><dl><dt>명령줄</dt><dd><code>powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBi…</code></dd></dl></details>
+<p class="ignore">직접 확인해서 괜찮은 항목이면: <code>SafetySecurity.exe ignore 51d0e8c2a9f37b64</code></p>
+</article>
+<article class="finding medium">
+<div class="head"><span class="badge medium">보통</span><span class="cat">새 실행 파일 · FILE-001</span></div>
+<h3>새 실행 파일: svchost.exe</h3>
+<dl><dt>위치</dt><dd><code>C:\Users\me\AppData\Roaming\x7f3\svchost.exe</code></dd><dt>대상</dt><dd><code>C:\Users\me\AppData\Roaming\x7f3\svchost.exe</code></dd></dl>
+<h4>왜 의심스러운가요?</h4><ul><li>최근 14일 안에 사용자 폴더 (사용자 쓰기 가능)에 생긴 서명 없는 실행 파일이에요.</li></ul>
+<p class="ignore">직접 확인해서 괜찮은 항목이면: <code>SafetySecurity.exe ignore c47a19e05b2d8f31</code></p>
+</article>
+<article class="finding low">
+<div class="head"><span class="badge low">낮음</span><span class="cat">서비스 · SVC-001</span></div>
+<h3>의심스러운 서비스: VendorAgent</h3>
+<dl><dt>위치</dt><dd><code>HKLM\SYSTEM\CurrentControlSet\Services\VendorAgent</code></dd><dt>대상</dt><dd><code>C:\Program Files\Some Vendor\agent.exe</code></dd></dl>
+<h4>왜 의심스러운가요?</h4><ul><li>서비스 경로에 공백이 있는데 따옴표가 없어요 (C:\Program Files\Some Vendor\agent.exe). 권한 상승에 악용될 수 있는 설정이에요.</li></ul>
+<p class="ignore">직접 확인해서 괜찮은 항목이면: <code>SafetySecurity.exe ignore 0e6b93d4f1a2c758</code></p>
+</article>
+<section class="footer"><h2>검사 범위</h2><ul><li>COM 하이재킹 (HKCU CLSID)</li><li>자동 실행 (Run 키, 시작프로그램, Winlogon, IFEO)</li><li>서비스·드라이버</li><li>예약 작업</li><li>브라우저 정책·바로가기·프록시</li><li>Microsoft Defender 설정</li><li>hosts 파일</li><li>사용자 폴더의 새 실행 파일</li></ul><h2>확인하지 못한 것</h2><ul><li>Defender 로컬 제외 목록: 관리자만 읽을 수 있어요. &#39;install --admin&#39;으로 관리자 작업을 추가하면 확인해요.</li></ul></section>
+</main>
+</body>
+</html>
