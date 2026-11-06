@@ -78,14 +78,26 @@ internal sealed class ScanLock : IDisposable
         var mutex = new Mutex(false, @"Local\SafetySecurity.Scan." + scope);
         try
         {
-            if (mutex.WaitOne(0))
+            bool acquired;
+            try
+            {
+                acquired = mutex.WaitOne(0);
+            }
+            catch (AbandonedMutexException)
+            {
+                // 이전 검사가 비정상 종료됐어요. 소유권은 이미 우리에게 넘어왔어요.
+                acquired = true;
+            }
+
+            if (acquired)
             {
                 return new ScanLock(mutex);
             }
         }
-        catch (AbandonedMutexException)
+        catch
         {
-            return new ScanLock(mutex);
+            mutex.Dispose();
+            throw;
         }
 
         mutex.Dispose();

@@ -174,6 +174,7 @@ internal static class TaskInstaller
             }
             catch (IOException)
             {
+                // 임시 XML을 못 지워도 설치에는 영향이 없어요 (자기 데이터 폴더 안의 파일이에요).
             }
         }
     }

@@ -22,6 +22,7 @@ internal sealed class Output
             }
             catch (IOException)
             {
+                // 콘솔 인코딩을 못 바꾸면 기본 인코딩으로 출력해요 (한글이 깨질 수는 있지만 동작은 해요).
             }
 
             // 프롬프트 다음 줄부터 깔끔하게 시작하도록
