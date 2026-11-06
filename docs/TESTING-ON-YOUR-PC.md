@@ -15,17 +15,28 @@ CI(GitHub의 Windows 서버)로는 확인할 수 없는 것들을 실제 PC에�
 
 ## 1. 설치
 
-**관리자 PowerShell**(시작 메뉴 → PowerShell 오른쪽 클릭 → 관리자 권한으로 실행)에서 압축을 푼 폴더로 이동한 뒤:
+1. 받은 zip 파일을 오른쪽 클릭 → **압축 풀기**(모두 압축 풀기)로 풀어요. zip 안을 열어 보기만 한 상태에서는 실행되지 않아요.
+2. **관리자 PowerShell**을 열어요 (시작 메뉴 → PowerShell 오른쪽 클릭 → 관리자 권한으로 실행).
+3. **압축을 푼 폴더로 이동**해요. PowerShell은 처음에 `C:\Users\내이름`에서 시작하고, `.\SafetySecurity.exe`는 "지금 있는 폴더 안의 파일"이라는 뜻이라 이동하지 않으면 "인식되지 않습니다" 오류가 나요.
 
-```powershell
-.\SafetySecurity.exe install --admin
-```
+   ```powershell
+   cd "$env:USERPROFILE\Downloads\SafetySecurity-0.1.0-rc.1-win-x64"
+   ```
+
+   > 팁: 폴더 이름이 다르면 `cd `(뒤에 띄어쓰기)까지 입력하고, 탐색기에서 압축을 푼 폴더를 PowerShell 창으로 **끌어다 놓은 뒤** Enter를 누르면 돼요.
+
+4. `dir`을 입력해서 `SafetySecurity.exe`와 `tools` 폴더가 보이는지 확인해요.
+5. 설치해요. 명령은 항상 **`.\`(점 + 역슬래시)** 로 시작해요.
+
+   ```powershell
+   .\SafetySecurity.exe install --admin
+   ```
 
 작업 스케줄러(`taskschd.msc`) → 작업 스케줄러 라이브러리 → `SafetySecurity` 폴더에 작업 5개(Logon, Daily, ServiceInstalled, Retry, Admin)가 보이면 성공이에요.
 
 ## 2. 안내형 시험 스크립트
 
-같은 관리자 PowerShell에서:
+같은 관리자 PowerShell, 같은 폴더에서:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\Test-OnMyPC.ps1
