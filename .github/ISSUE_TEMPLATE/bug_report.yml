@@ -1,0 +1,47 @@
+name: 버그 신고 / Bug report
+description: 프로그램이 오류가 나거나 이상하게 동작해요.
+title: "[버그] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "**사용자 이름 등 개인정보는 지우고 올려 주세요.**"
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 있었나요? / What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 방법 / Steps to reproduce
+      placeholder: |
+        1. SafetySecurity.exe install
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: 로그 / Log
+      description: "%LOCALAPPDATA%\\SafetySecurity\\logs\\scan.log 마지막 부분, 또는 tools\\Test-OnMyPC.ps1 결과 파일"
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: SafetySecurity 버전
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 버전
+      placeholder: "예: Windows 11 24H2 (winver)"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: 설치 방식
+      options: ["install (사용자)", "install --admin (관리자)", "설치 안 함 (직접 실행)"]

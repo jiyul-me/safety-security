@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Windows API를 직접 쓰지 않는 규칙/모델/보고서 코드. Linux·macOS에서도 빌드와 테스트가 돼요. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SafetySecurity.Core</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SafetySecurity.Core.Tests" />
+  </ItemGroup>
+</Project>

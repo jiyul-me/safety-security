@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="SafetySecurity — read-only Windows persistence scanner">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f1624"/>
+      <stop offset="1" stop-color="#162238"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5b9dff"/>
+      <stop offset="1" stop-color="#3ddc97"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="320" rx="28" fill="url(#bg)"/>
+  <g stroke="#26344d" stroke-width="1" opacity="0.9">
+    <path d="M880 0v320M960 0v320M1040 0v320M1120 0v320M1200 0v320"/>
+    <path d="M840 60h440M840 140h440M840 220h440M840 300h440"/>
+  </g>
+  <g transform="translate(112 64)">
+    <path d="M96 0 L184 32 V96 C184 150 148 182 96 200 C44 182 8 150 8 96 V32 Z" fill="url(#shield)"/>
+    <path d="M60 102 L86 128 L136 74" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="352" y="150" font-family="Segoe UI, -apple-system, system-ui, Helvetica, Arial, sans-serif" font-size="68" font-weight="700" fill="#eef3fb">SafetySecurity</text>
+  <text x="354" y="200" font-family="Segoe UI, -apple-system, system-ui, Helvetica, Arial, sans-serif" font-size="28" fill="#9fb0cc">Read-only Windows persistence scanner</text>
+  <g font-family="Segoe UI, -apple-system, system-ui, Helvetica, Arial, sans-serif" font-size="20" font-weight="600">
+    <rect x="354" y="228" width="132" height="36" rx="18" fill="#5b9dff" opacity="0.15"/>
+    <text x="420" y="252" text-anchor="middle" fill="#5b9dff">read-only</text>
+    <rect x="498" y="228" width="108" height="36" rx="18" fill="#5b9dff" opacity="0.15"/>
+    <text x="552" y="252" text-anchor="middle" fill="#5b9dff">offline</text>
+    <rect x="618" y="228" width="170" height="36" rx="18" fill="#3ddc97" opacity="0.15"/>
+    <text x="703" y="252" text-anchor="middle" fill="#3ddc97">anti-cheat safe</text>
+  </g>
+</svg>
