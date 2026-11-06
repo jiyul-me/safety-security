@@ -50,7 +50,15 @@ powershell -ExecutionPolicy Bypass -File .\tools\Test-OnMyPC.ps1
 4. **서비스 설치 시험**: 아무 일도 하지 않는 시험 서비스를 잠깐 만들었다가 지워요. 사용자 작업이 깨어났는지 확인해요.
 5. **정리**: 가짜 항목은 성공하든 실패하든 **항상** 지워요.
 
-끝나면 결과가 `%LOCALAPPDATA%\SafetySecurity\pc-test-result.txt`에 저장돼요. 사용자 이름과 PC 이름은 `<user>`, `<pc>`로 가려져 있어요.
+관리자 PowerShell이 아니면 스크립트가 처음에 "관리자 권한으로 다시 열까요?"라고 물어봐요. 4단계는 관리자 권한이 있어야 해요.
+
+특정 단계만 다시 하고 싶으면 `-Only`를 붙여요. 예를 들어 4단계만 하려면:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\Test-OnMyPC.ps1 -Only 4
+```
+
+끝나면 결과가 `%LOCALAPPDATA%\SafetySecurity\pc-test-result.txt`에 저장돼요. 이 PC에서 나온 실제 항목(규칙, 위험도, 대상, 서명자)도 함께 기록돼서 오탐인지 판단할 수 있어요. 사용자 이름과 PC 이름은 `<user>`, `<pc>`로 가려져 있어요.
 
 ## 3. 직접 확인할 것
 
