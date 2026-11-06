@@ -58,6 +58,9 @@ public static class ExecutableAssessor
                 sev = Model.Severity.High;
                 reasons.Add("디지털 서명이 손상됐거나 폐기된 인증서예요. 파일이 변조됐을 수 있어요.");
                 break;
+            case SignatureStatus.Unsigned or SignatureStatus.Untrusted when kind == PathKind.PackagedApp:
+                // Store·MSIX 앱은 패키지 단위로 서명되고, 설치 폴더는 Windows만 쓸 수 있어요. 파일 단위 서명이 없는 게 정상이에요.
+                break;
             case SignatureStatus.Unsigned:
             case SignatureStatus.Untrusted:
                 var what = sig.Status == SignatureStatus.Unsigned ? "디지털 서명이 없는" : "신뢰할 수 없는 서명의";
@@ -118,7 +121,14 @@ public static class ExecutableAssessor
         };
         result.Reasons.AddRange(reasons);
         result.Evidence.Add(new("경로 종류", PathClassifier.ToKorean(kind)));
-        result.Evidence.Add(new("서명", sig.ToKorean()));
+        result.Evidence.Add(new("서명", kind == PathKind.PackagedApp && sig.Status is SignatureStatus.Unsigned or SignatureStatus.Untrusted
+            ? "패키지 서명 (파일 단위 서명 없음, Windows가 설치 때 확인)"
+            : sig.ToKorean()));
+        if (ctx.Classifier.PackageFolderName(path) is { } package)
+        {
+            result.Evidence.Add(new("앱 패키지", package));
+        }
+
         if (!string.IsNullOrEmpty(sig.Signer))
         {
             result.Evidence.Add(new("서명자", sig.Signer));

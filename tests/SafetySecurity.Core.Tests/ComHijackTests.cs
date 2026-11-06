@@ -107,7 +107,59 @@ public class ComHijackTests
         env.Registry.Set(RegHive.CurrentUser, $@"Software\Classes\CLSID\{Clsid}\TreatAs", null, "{00000000-0000-0000-0000-000000000001}");
         var findings = new ComHijackScanner().Scan(env.Context()).ToList();
         Assert.Contains(findings, f => f.RuleId == "COM-003" && f.Severity == Severity.High);
-        Assert.Contains(findings, f => f.RuleId == "COM-004" && f.Severity == Severity.High);
+        // TreatAs 대상 클래스가 아무것도 실행하지 않으면 '보통'이에요.
+        Assert.Contains(findings, f => f.RuleId == "COM-004" && f.Severity == Severity.Medium);
+    }
+
+    [Fact]
+    public void TreatAsToUnsignedUserDllIsHigh()
+    {
+        var env = WithSystemClass();
+        const string evilClass = "{BADBADBA-0000-0000-0000-000000000001}";
+        const string evil = @"C:\Users\jiyul\AppData\Local\Temp\x.dll";
+        env.Registry.Set(RegHive.CurrentUser, $@"Software\Classes\CLSID\{Clsid}\TreatAs", null, evilClass);
+        env.Registry.Set(RegHive.CurrentUser, $@"Software\Classes\CLSID\{evilClass}\InprocServer32", null, evil);
+        env.Files.Add(evil);
+        var findings = new ComHijackScanner().Scan(env.Context()).ToList();
+        var treatAs = Assert.Single(findings, f => f.RuleId == "COM-004");
+        Assert.Equal(Severity.High, treatAs.Severity);
+        Assert.Contains(evil, treatAs.Target, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StorePaintRegistrationIsNotReported()
+    {
+        // 실제 PC에서 나온 오탐: 새 그림판(Store 앱)이 옛 "Paintbrush 그림" 클래스를 자기 클래스로 넘겨받는 등록
+        var env = new TestEnv();
+        const string pbrush = "{0003000A-0000-0000-C000-000000000046}";
+        const string paint = "{D3E34B21-9D75-101A-8C3D-00AA001A1652}";
+        const string exe = @"C:\Program Files\WindowsApps\Microsoft.Paint_11.2609.401.0_x64__8wekyb3d8bbwe\PaintApp\mspaint.exe";
+        env.Registry.Set(RegHive.CurrentUser, $@"Software\Classes\CLSID\{pbrush}\TreatAs", null, paint);
+        env.Registry.Set(RegHive.CurrentUser, $@"Software\Classes\CLSID\{paint}\LocalServer32", null, exe);
+        env.Registry.Key(RegHive.CurrentUser, $@"Software\Classes\CLSID\{paint}", TestEnv.Now.AddDays(-1));
+        env.Files.Add(exe, created: TestEnv.Now.AddDays(-1));
+
+        // Store 앱 파일은 파일 단위 서명이 없어요 (패키지로 서명돼요).
+        Assert.Empty(new ComHijackScanner().Scan(env.Context()));
+
+        // 다른 PC처럼 HKLM에도 옛 클래스가 있으면 '낮음'으로만 남겨요 (알림 없음).
+        env.Registry.Set(RegHive.LocalMachine, $@"Software\Classes\CLSID\{pbrush}", null, "Paintbrush Picture");
+        var f = Assert.Single(new ComHijackScanner().Scan(env.Context()));
+        Assert.Equal("COM-004", f.RuleId);
+        Assert.Equal(Severity.Low, f.Severity);
+        Assert.Contains(f.Evidence, e => e.Key == "앱 패키지" && e.Value.EndsWith("8wekyb3d8bbwe", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TamperedPackagedAppIsStillHigh()
+    {
+        var env = new TestEnv();
+        const string exe = @"C:\Program Files\WindowsApps\Vendor.App_1.0.0.0_x64__abcdefghijkl\app.exe";
+        env.Registry.Set(RegHive.CurrentUser, @"Software\Classes\CLSID\{C}\LocalServer32", null, exe);
+        env.Files.Add(exe);
+        env.Signatures.Set(exe, new SignatureInfo(SignatureStatus.Invalid, Detail: "파일이 서명 후 변경됨"));
+        var f = Assert.Single(new ComHijackScanner().Scan(env.Context()));
+        Assert.Equal(Severity.High, f.Severity);
     }
 
     [Fact]
