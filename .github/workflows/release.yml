@@ -5,16 +5,20 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
   release:
     runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: "10.0.x"
       - name: Version from tag
@@ -22,7 +26,9 @@ jobs:
         shell: pwsh
         run: |
           $v = "${{ github.ref_name }}".TrimStart('v')
+          if ($v -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') { throw "Tag must look like v1.2.3 or v1.2.3-rc.1" }
           "version=$v" >> $env:GITHUB_OUTPUT
+          "prerelease=$($v.Contains('-'))".ToLower() >> $env:GITHUB_OUTPUT
       - name: Test
         run: dotnet test tests/SafetySecurity.Core.Tests -c Release
       - name: Publish (NativeAOT, win-x64)
@@ -36,7 +42,9 @@ jobs:
           $name = "SafetySecurity-${{ steps.ver.outputs.version }}-win-x64"
           New-Item -ItemType Directory dist | Out-Null
           Copy-Item out/SafetySecurity.exe dist/
-          Copy-Item README.md, LICENSE dist/
+          Copy-Item README.md, LICENSE, CHANGELOG.md dist/
+          New-Item -ItemType Directory dist/tools | Out-Null
+          Copy-Item tools/Test-OnMyPC.ps1 dist/tools/
           Compress-Archive -Path dist/* -DestinationPath "$name.zip"
           Copy-Item out/SafetySecurity.exe "SafetySecurity.exe"
           $lines = foreach ($f in @("$name.zip", "SafetySecurity.exe")) { "{0}  {1}" -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLower(), $f }
@@ -44,15 +52,17 @@ jobs:
           Get-Content SHA256SUMS.txt
           "ZIP=$name.zip" >> $env:GITHUB_ENV
       - name: Build provenance attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             ${{ env.ZIP }}
             SafetySecurity.exe
-      - name: Create GitHub release
+      - name: Create draft GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $extra = @()
+          if ("${{ steps.ver.outputs.prerelease }}" -eq 'true') { $extra += '--prerelease' }
           gh release create "${{ github.ref_name }}" "$env:ZIP" SafetySecurity.exe SHA256SUMS.txt `
-            --title "SafetySecurity ${{ github.ref_name }}" --generate-notes --draft
+            --title "SafetySecurity ${{ github.ref_name }}" --generate-notes --draft @extra
