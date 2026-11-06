@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 보안 취약점 신고 (비공개) / Report a vulnerability privately
+    url: https://github.com/jiyul-me/safety-security/security/advisories/new
+    about: 검사기를 속이거나 우회하는 방법은 공개 이슈 대신 여기로 알려 주세요.
+  - name: 사용법 질문 / Questions
+    url: https://github.com/jiyul-me/safety-security/blob/main/README.md
+    about: README와 docs/ 폴더를 먼저 확인해 주세요.

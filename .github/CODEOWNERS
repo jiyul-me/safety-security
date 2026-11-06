@@ -1,0 +1,7 @@
+# 모든 변경은 관리자 리뷰를 거쳐요.
+* @jiyul-me
+
+# 안전장치는 특히 신중하게 봐요.
+/BannedSymbols.txt @jiyul-me
+/tests/SafetySecurity.Core.Tests/ForbiddenApiTests.cs @jiyul-me
+/.github/ @jiyul-me

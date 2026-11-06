@@ -1,0 +1,16 @@
+changelog:
+  exclude:
+    labels: ["skip-changelog"]
+  categories:
+    - title: 새 탐지 규칙 / New detections
+      labels: ["detection", "rule"]
+    - title: 기능 / Features
+      labels: ["enhancement", "feature"]
+    - title: 오탐 줄이기 / False-positive fixes
+      labels: ["false-positive"]
+    - title: 버그 수정 / Bug fixes
+      labels: ["bug"]
+    - title: 문서 / Docs
+      labels: ["documentation"]
+    - title: 그 밖의 변경 / Other changes
+      labels: ["*"]

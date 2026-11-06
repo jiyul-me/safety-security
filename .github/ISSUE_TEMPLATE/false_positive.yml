@@ -1,0 +1,47 @@
+name: 오탐 신고 / False positive
+description: 정상 프로그램인데 의심 항목으로 나왔어요.
+title: "[오탐] "
+labels: ["false-positive"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        신고해 주셔서 고마워요! 오탐 신고는 규칙을 다듬는 데 가장 큰 도움이 돼요.
+        **올리기 전에 사용자 이름, PC 이름, 개인 폴더 이름은 `<user>`처럼 지워 주세요.**
+  - type: input
+    id: rule
+    attributes:
+      label: 규칙 ID / Rule ID
+      description: 보고서 카드 오른쪽 위에 있어요 (예. COM-002, RUN-001).
+      placeholder: COM-002
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 위험도 / Severity
+      options: ["높음 (High)", "보통 (Medium)", "낮음 (Low)"]
+    validations:
+      required: true
+  - type: input
+    id: program
+    attributes:
+      label: 어떤 프로그램인가요? / Which program is it?
+      placeholder: "예: Discord 1.0.9170, Steam, 회사 VPN"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 보고서 내용 / Report details
+      description: 위치, 대상, 서명 상태, 서명자를 붙여 넣어 주세요 (SHA-256도 있으면 좋아요).
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: SafetySecurity 버전
+      placeholder: "SafetySecurity.exe version 결과"
+    validations:
+      required: true
