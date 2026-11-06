@@ -38,3 +38,30 @@ jobs:
       - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: "/language:csharp"
+          output: codeql-results
+      - name: Summarize findings
+        if: always()
+        shell: pwsh
+        run: |
+          $sarif = Get-ChildItem codeql-results -Filter *.sarif -Recurse | Select-Object -First 1
+          if (-not $sarif) { Write-Host 'No SARIF file'; exit 0 }
+          $doc = Get-Content $sarif.FullName -Raw | ConvertFrom-Json
+          $rows = foreach ($run in $doc.runs) {
+            foreach ($r in $run.results) {
+              $loc = $r.locations[0].physicalLocation
+              [pscustomobject]@{
+                Level = if ($r.level) { $r.level } else { 'warning' }
+                Rule  = $r.ruleId
+                Where = "$($loc.artifactLocation.uri):$($loc.region.startLine)"
+                What  = ($r.message.text -replace '\s+', ' ')
+              }
+            }
+          }
+          $rows = @($rows | Sort-Object @{e={ @{error=0;warning=1;note=2}[$_.Level] }}, Rule, Where)
+          Write-Host "CodeQL findings: $($rows.Count)"
+          $rows | Group-Object Rule | Sort-Object Count -Descending | ForEach-Object { Write-Host ("{0,4}  {1}" -f $_.Count, $_.Name) }
+          $rows | ForEach-Object { Write-Host "[$($_.Level)] $($_.Rule)  $($_.Where)  $($_.What)" }
+          "## CodeQL findings ($($rows.Count))" >> $env:GITHUB_STEP_SUMMARY
+          "| Level | Rule | Location | Message |" >> $env:GITHUB_STEP_SUMMARY
+          "|---|---|---|---|" >> $env:GITHUB_STEP_SUMMARY
+          $rows | ForEach-Object { "| $($_.Level) | ``$($_.Rule)`` | ``$($_.Where)`` | $($_.What -replace '\|', '/') |" >> $env:GITHUB_STEP_SUMMARY }
