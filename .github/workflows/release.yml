@@ -3,13 +3,23 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # 태그를 직접 push하지 않고 Actions 화면에서 버전을 입력해 릴리스를 만들 수도 있어요 (main에서만).
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "릴리스 태그 (예: v0.1.0-rc.1, v0.1.0)"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   release:
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
     runs-on: windows-latest
+    env:
+      TAG: ${{ inputs.version || github.ref_name }}
     permissions:
       contents: write
       id-token: write
@@ -21,22 +31,40 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: "10.0.x"
+      - name: Skip if this release already exists
+        id: existing
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 초안 릴리스를 Publish하면 태그가 생기면서 이 워크플로가 다시 실행돼요. 그때는 다시 빌드하지 않아요.
+          gh release view "$env:TAG" --json tagName 2>$null | Out-Null
+          $exists = $LASTEXITCODE -eq 0
+          "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          if ($exists) { Write-Host "Release $env:TAG already exists; nothing to do." }
+          exit 0
       - name: Version from tag
         id: ver
+        if: steps.existing.outputs.exists != 'true'
         shell: pwsh
         run: |
-          $v = "${{ github.ref_name }}".TrimStart('v')
+          if ("$env:TAG" -notmatch '^v') { throw "Tag must start with v (e.g. v0.1.0-rc.1)" }
+          $v = "$env:TAG".Substring(1)
           if ($v -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') { throw "Tag must look like v1.2.3 or v1.2.3-rc.1" }
           "version=$v" >> $env:GITHUB_OUTPUT
           "prerelease=$($v.Contains('-'))".ToLower() >> $env:GITHUB_OUTPUT
       - name: Test
+        if: steps.existing.outputs.exists != 'true'
         run: dotnet test tests/SafetySecurity.Core.Tests -c Release
       - name: Publish (NativeAOT, win-x64)
+        if: steps.existing.outputs.exists != 'true'
         run: dotnet publish src/SafetySecurity/SafetySecurity.csproj -c Release -r win-x64 -o out -p:Version=${{ steps.ver.outputs.version }}
       - name: Integration tests
+        if: steps.existing.outputs.exists != 'true'
         shell: pwsh
         run: ./tests/integration/Run-Integration.ps1 -Exe out/SafetySecurity.exe
       - name: Package
+        if: steps.existing.outputs.exists != 'true'
         shell: pwsh
         run: |
           $name = "SafetySecurity-${{ steps.ver.outputs.version }}-win-x64"
@@ -52,17 +80,20 @@ jobs:
           Get-Content SHA256SUMS.txt
           "ZIP=$name.zip" >> $env:GITHUB_ENV
       - name: Build provenance attestation
+        if: steps.existing.outputs.exists != 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             ${{ env.ZIP }}
             SafetySecurity.exe
       - name: Create draft GitHub release
+        if: steps.existing.outputs.exists != 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $extra = @()
           if ("${{ steps.ver.outputs.prerelease }}" -eq 'true') { $extra += '--prerelease' }
-          gh release create "${{ github.ref_name }}" "$env:ZIP" SafetySecurity.exe SHA256SUMS.txt `
-            --title "SafetySecurity ${{ github.ref_name }}" --generate-notes --draft @extra
+          # 태그가 아직 없으면 (workflow_dispatch) 이 커밋을 대상으로 해요. 태그는 초안을 Publish할 때 만들어져요.
+          gh release create "$env:TAG" "$env:ZIP" SafetySecurity.exe SHA256SUMS.txt `
+            --target "${{ github.sha }}" --title "SafetySecurity $env:TAG" --generate-notes --draft @extra
