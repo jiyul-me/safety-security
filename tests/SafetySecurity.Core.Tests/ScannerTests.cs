@@ -142,17 +142,33 @@ public class ServiceTests
     }
 
     [Fact]
-    public void UnquotedServicePathIsLow()
+    public void UnquotedServicePathUnderProgramFilesIsNotReported()
     {
+        // 실제 PC: Riot Vanguard(vgc)가 따옴표 없이 등록돼 있지만, C:\Program.exe와 C:\Program Files\Riot.exe는 관리자만 만들 수 있어요.
         var env = new TestEnv();
-        const string exe = @"C:\Program Files\Some Vendor\agent.exe";
+        const string exe = @"C:\Program Files\Riot Vanguard\vgc.exe";
+        env.Files.Add(exe);
+        env.Signatures.Signed(exe, "Riot Games, Inc.");
+        env.Registry.Set(RegHive.LocalMachine, Services + @"\vgc", "Type", 0x10);
+        env.Registry.Set(RegHive.LocalMachine, Services + @"\vgc", "Start", 3);
+        env.Registry.Set(RegHive.LocalMachine, Services + @"\vgc", "ImagePath", exe);
+        Assert.Empty(new ServiceScanner().Scan(env.Context()));
+    }
+
+    [Fact]
+    public void UnquotedServicePathOnOtherDriveIsLow()
+    {
+        // D:\ 같은 다른 드라이브 루트에는 일반 사용자도 D:\My.exe를 만들 수 있어요.
+        var env = new TestEnv();
+        const string exe = @"D:\My Games\Launcher Service\svc.exe";
         env.Files.Add(exe);
         env.Signatures.Signed(exe, "Vendor");
-        env.Registry.Set(RegHive.LocalMachine, Services + @"\Agent", "Type", 0x10);
-        env.Registry.Set(RegHive.LocalMachine, Services + @"\Agent", "Start", 2);
-        env.Registry.Set(RegHive.LocalMachine, Services + @"\Agent", "ImagePath", exe);
+        env.Registry.Set(RegHive.LocalMachine, Services + @"\Launcher", "Type", 0x10);
+        env.Registry.Set(RegHive.LocalMachine, Services + @"\Launcher", "Start", 2);
+        env.Registry.Set(RegHive.LocalMachine, Services + @"\Launcher", "ImagePath", exe);
         var f = Assert.Single(new ServiceScanner().Scan(env.Context()));
         Assert.Equal(Severity.Low, f.Severity);
+        Assert.Contains(f.Reasons, r => r.Contains(@"D:\", StringComparison.Ordinal));
     }
 }
 
@@ -205,6 +221,28 @@ public class TaskTests
         var f = Assert.Single(new ScheduledTaskScanner().Scan(env.Context()));
         Assert.Equal(@"작업 스케줄러\OneDriveUpdater", f.Location);
         Assert.Equal(Severity.High, f.Severity);
+    }
+
+    [Fact]
+    public void LeftoverMicrosoftTaskWithMissingSystemFileIsNotReported()
+    {
+        // 실제 PC: Windows 11 최신 버전은 MusNotification.exe를 없앴지만 USO_UxBroker 작업은 남아 있어요.
+        const string xml = """
+<Tasks>
+<!-- \Microsoft\Windows\UpdateOrchestrator\USO_UxBroker -->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Actions Context="Author"><Exec><Command>%systemroot%\system32\MusNotification.exe</Command><Arguments>ReadyToReboot</Arguments></Exec></Actions>
+</Task>
+<!-- \VendorUpdater -->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Actions Context="Author"><Exec><Command>C:\Windows\System32\vendorupd.exe</Command></Exec></Actions>
+</Task>
+</Tasks>
+""";
+        var env = new TestEnv { TasksXml = xml };
+        var f = Assert.Single(new ScheduledTaskScanner().Scan(env.Context()));
+        Assert.Contains("VendorUpdater", f.Title, StringComparison.Ordinal);
+        Assert.Equal(Severity.Low, f.Severity);
     }
 
     [Fact]

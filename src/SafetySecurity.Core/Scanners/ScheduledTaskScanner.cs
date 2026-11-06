@@ -68,6 +68,17 @@ public sealed class ScheduledTaskScanner : IScanner
             return null;
         }
 
+        // Windows 업데이트가 파일을 없애고 작업만 남기는 경우가 많아요 (예: USO_UxBroker → MusNotification.exe).
+        // Microsoft 작업이 Windows 폴더의 없는 파일을 가리키는 것뿐이면 보고하지 않아요.
+        if (task.Name.StartsWith(@"\Microsoft\", StringComparison.OrdinalIgnoreCase)
+            && a.Severity == Severity.Low
+            && a.Target is { } target
+            && !ctx.Files.FileExists(target)
+            && ctx.Classifier.Classify(target) == PathKind.Windows)
+        {
+            return null;
+        }
+
         var severity = a.Severity.Value;
         var reasons = new List<string>(a.Reasons);
         if (task.Hidden && a.Target is not null && PathClassifier.IsUserWritable(ctx.Classifier.Classify(a.Target)))
