@@ -25,6 +25,9 @@ internal sealed class ScanOptions
 
     public bool Open { get; set; }
 
+    /// <summary>직접 검사(더블클릭·시작 메뉴)할 때 "검사하고 있어요" 알림을 띄우고 끝나면 지워요.</summary>
+    public bool ProgressToast { get; set; }
+
     public string? ReportDir { get; set; }
 }
 
@@ -72,7 +75,7 @@ internal static class ScanCommand
         using var scanLock = ScanLock.TryAcquire(o.Scope.ToString());
         if (scanLock is null)
         {
-            output.Line("다른 검사가 이미 실행 중이에요.");
+            output.Line("다른 검사가 이미 실행 중이에요. 잠시 뒤에 다시 해 주세요.");
             return ExitCodes.AlreadyRunning;
         }
 
@@ -92,6 +95,9 @@ internal static class ScanCommand
             output.Line($"지금은 {busy}이라 검사를 미뤘어요. 30분마다 다시 확인해요.");
             return ExitCodes.Deferred;
         }
+
+        // 메서드가 끝날 때(보고서를 연 뒤, 중단·오류 포함) 알림을 지워요.
+        using var progress = o.ProgressToast ? ScanningToast.TryShow() : null;
 
         var sigCache = store.LoadSignatureCache(o.Scope);
         var files = new WinFileSystemView();
@@ -140,7 +146,7 @@ internal static class ScanCommand
 
         var decision = BaselineEvaluator.Apply(result, state, config);
         var doc = ReportDocument.From(result, decision, Program.Version, Environment.MachineName);
-        var html = store.WriteReport(doc, o.ReportDir, TaskInstaller.ExeName);
+        var html = store.WriteReport(doc, o.ReportDir, TaskInstaller.ExeName, runDialog: RunDialogNameRegistered());
 
         state.LastScanUtc = now;
         state.LastReportPath = html;
@@ -221,6 +227,30 @@ internal static class ScanCommand
         var buffer = stackalloc char[1024];
         var len = Native.NativeMethods.GetLongPathName(value, buffer, 1024);
         return len is > 0 and < 1024 ? new string(buffer, 0, (int)len) : value;
+    }
+
+    /// <summary>
+    /// 설치 프로그램이 Win+R 실행 이름(App Paths\SafetySecurity.exe)을 등록했는지 읽기만 해서 확인해요.
+    /// 등록돼 있으면 보고서의 숨기기 안내를 PowerShell 없이 Win+R로 보여줘요.
+    /// </summary>
+    private static bool RunDialogNameRegistered()
+    {
+        const string key = @"Software\Microsoft\Windows\CurrentVersion\App Paths\" + TaskInstaller.ExeName;
+        try
+        {
+            using var user = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(key);
+            if (user is not null)
+            {
+                return true;
+            }
+
+            using var machine = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key);
+            return machine is not null;
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            return false;
+        }
     }
 
     public static void OpenFile(string path)

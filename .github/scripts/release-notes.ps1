@@ -36,17 +36,22 @@ if (-not $text) {
 }
 
 $heading = if ($section -eq 'Unreleased') { "> 사전 릴리스예요. 다음 정식 버전에 들어갈 변경을 미리 시험하는 빌드예요.`n`n" } else { '' }
+$setupName = "SafetySecurity-Setup-$Version.exe"
 $footer = @"
 
 ---
 
-### 받은 파일 확인하기
-- ``SHA256SUMS.txt``와 비교: ``Get-FileHash .\SafetySecurity.exe -Algorithm SHA256``
-- 이 저장소의 GitHub Actions가 만든 파일인지 확인 (빌드 출처 증명): ``gh attestation verify .\SafetySecurity.exe --repo $Repo``
-- 코드 서명 인증서가 아직 없어서 처음 실행할 때 SmartScreen("Windows의 PC 보호")이 뜰 수 있어요. 위 방법으로 파일이 진짜인지 먼저 확인한 뒤 '추가 정보' → '실행'을 누르세요.
-
 ### 설치
-zip을 풀고, 관리자 PowerShell에서 그 폴더로 이동한 뒤 ``.\SafetySecurity.exe install --admin``을 실행해요. 자세한 방법은 [README](https://github.com/$Repo#빠른-시작)와 [내 PC에서 시험하기](https://github.com/$Repo/blob/main/docs/TESTING-ON-YOUR-PC.md)를 보세요.
+1. ``$setupName``를 받아 더블클릭해요.
+2. "Windows의 PC 보호" 창이 뜨면 '추가 정보' → '실행'을 눌러요. 코드 서명 인증서가 아직 없어서 떠요. 아래 방법으로 파일이 진짜인지 먼저 확인할 수 있어요.
+3. 설치 방식(내 계정에만 / 관리자 권한으로)을 고르고 설치하면 끝이에요. 시작 메뉴의 **SafetySecurity**로 언제든 검사하고, 설정 → 앱에서 제거해요.
+
+명령줄로 쓰거나 내 PC 시험 스크립트가 필요하면 zip을 받으세요. 자세한 방법은 [README](https://github.com/$Repo#빠른-시작)와 [내 PC에서 시험하기](https://github.com/$Repo/blob/main/docs/TESTING-ON-YOUR-PC.md)를 보세요.
+
+### 받은 파일 확인하기
+- ``SHA256SUMS.txt``와 비교: ``Get-FileHash .\$setupName -Algorithm SHA256``
+- 이 저장소의 GitHub Actions가 만든 파일인지 확인 (빌드 출처 증명): ``gh attestation verify .\$setupName --repo $Repo``
+- 설치된 실행 파일도 확인할 수 있어요: ``gh attestation verify "`$env:LOCALAPPDATA\Programs\SafetySecurity\SafetySecurity.exe" --repo $Repo``
 "@
 
 Set-Content -LiteralPath $Out -Value ($heading + $text + "`n" + $footer) -Encoding utf8

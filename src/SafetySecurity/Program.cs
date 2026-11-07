@@ -34,6 +34,7 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
   SafetySecurity.exe version
 
 공통 옵션:  --data-dir <폴더>  상태·보고서 폴더 (기본: %LOCALAPPDATA%\SafetySecurity)
+            --quiet           메시지를 보여주지 않고 종료 코드만 돌려줘요 (설치 프로그램용)
 
 이 프로그램은 아무것도 지우거나 고치지 않고, 인터넷을 쓰지 않아요.
 """;
@@ -43,6 +44,7 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
     {
         var output = new Output();
         var list = args.ToList();
+        output.Quiet = list.RemoveAll(a => a.Equals("--quiet", StringComparison.OrdinalIgnoreCase)) > 0;
         var dataDir = TakeValue(list, "--data-dir");
         var store = new DataStore(dataDir);
         var command = list.Count > 0 && !list[0].StartsWith('-') ? list[0].ToLowerInvariant() : "manual";
@@ -57,14 +59,21 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
             {
                 case "manual":
                 {
-                    var code = ScanCommand.Run(new ScanOptions { Reason = ScanReason.Manual, Force = true, Open = true, NoToast = true }, store, output);
+                    // 더블클릭·시작 메뉴: 지금 검사하고 보고서 열기. 검사하는 동안 알림으로 진행 중임을 보여줘요.
+                    var options = new ScanOptions { Reason = ScanReason.Manual, Force = true, Open = true, NoToast = true, ProgressToast = !output.HasConsole };
+                    var code = ScanCommand.Run(options, store, output);
+                    if (code == ExitCodes.AlreadyRunning)
+                    {
+                        output.ShowIfNoConsole("SafetySecurity");
+                    }
+
                     return code;
                 }
 
                 case "scan":
                 {
                     var o = ParseScan(list);
-                    output.Quiet = o.Reason != ScanReason.Manual && !output.HasConsole;
+                    output.Quiet |= o.Reason != ScanReason.Manual && !output.HasConsole;
                     return ScanCommand.Run(o, store, output);
                 }
 

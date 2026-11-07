@@ -4,7 +4,7 @@ CI(GitHub의 Windows 서버)로는 확인할 수 없는 것들을 실제 PC에�
 
 | CI로 확인한 것 | PC에서 확인할 것 |
 |---|---|
-| 빌드, 단위 테스트 80개, 가짜 COM 하이재킹·Run 키 탐지, 베이스라인, 무시 목록, 게임 프로세스로 연기, 작업 등록과 삭제 | 알림이 실제로 화면에 뜨는지, **전체 화면 게임** 감지, **뱅가드와 함께** 써도 괜찮은지, 일반 사용자 작업이 **서비스 설치 이벤트**로 깨어나는지, 실제 PC의 **오탐** 개수 |
+| 빌드, 단위 테스트 90여 개, 가짜 COM 하이재킹·Run 키 탐지, 베이스라인, 무시 목록, 게임 프로세스로 연기, 작업 등록과 삭제, 설치 프로그램 조용히 설치·다시 설치·제거 (두 방식 모두) | 알림이 실제로 화면에 뜨는지, **전체 화면 게임** 감지, **뱅가드와 함께** 써도 괜찮은지, 일반 사용자 작업이 **서비스 설치 이벤트**로 깨어나는지, 실제 PC의 **오탐** 개수, **설치 프로그램** 화면·시작 메뉴·제거 |
 
 ## 0. 준비
 
@@ -82,7 +82,32 @@ powershell -ExecutionPolicy Bypass -File .\tools\Test-OnMyPC.ps1 -Only 4
 - 정상 프로그램이 잡혔다면: [오탐 신고](https://github.com/jiyul-me/safety-security/issues/new?template=false_positive.yml)
 - 실제로 의심스러운 게 나왔다면: 지우기 전에 보고서의 "확인하는 법"을 먼저 따라 하세요. 이 프로그램은 아무것도 지우지 않아요.
 
+## 5. 설치 프로그램 시험 (v0.2.0부터)
+
+PowerShell 없이 쓰는 방법이 잘 되는지 확인해요. 사전 릴리스(`-rc`)의 `SafetySecurity-Setup-….exe`로 해요.
+
+**먼저 예전 수동 설치 지우기** (zip으로 `install`을 했던 PC만): 예전 압축 폴더에서 관리자 PowerShell로 `.\SafetySecurity.exe uninstall`을 실행해요. 그다음 `C:\Program Files\SafetySecurity`와 `%LOCALAPPDATA%\Programs\SafetySecurity` 폴더가 남아 있으면 지워요.
+
+1. **설치**: Setup을 더블클릭 → '추가 정보' → '실행' → **내 계정에만** → 설치 → 마지막 화면의 "지금 첫 검사하기"를 켠 채로 마침
+   - 확인: 권한 요청 창이 안 뜨는지, "검사하고 있어요" 알림이 뜨는지, 검사가 끝나면 그 알림이 사라지고 보고서가 열리는지
+2. **시작 메뉴**: 방패 아이콘의 **SafetySecurity**가 있는지, 누르면 다시 검사하고 보고서가 열리는지
+   - 검사 중에 한 번 더 누르면 "다른 검사가 이미 실행 중이에요" 창이 떠야 해요.
+3. **Win+R**: <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity status` → 상태 창에 등록된 작업 4개가 보이는지
+4. **제거**: 설정 → 앱 → 설치된 앱 → SafetySecurity → 제거 → "검사 기록과 보고서도 지울까요?"에서 **아니요**
+   - 확인: 시작 메뉴에서 사라졌는지, 작업 스케줄러의 `SafetySecurity` 폴더가 비었는지, `%LOCALAPPDATA%\Programs\SafetySecurity` 폴더가 없어졌는지
+5. **관리자 권한으로 다시 설치**: Setup → **관리자 권한으로** → 권한 요청 창에서 '예' → 설치
+   - 확인: `C:\Program Files\SafetySecurity`에 설치됐는지, 작업 스케줄러에 `Admin` 작업이 있는지
+   - (선택) 서비스 설치 시험: zip을 푼 폴더의 관리자 PowerShell에서 `powershell -ExecutionPolicy Bypass -File .\tools\Test-OnMyPC.ps1 -Exe "C:\Program Files\SafetySecurity\SafetySecurity.exe" -Only 4`
+6. **게임과 함께**: 발로란트를 켠 채로 시작 메뉴의 SafetySecurity를 눌러요. 직접 검사는 게임 중에도 바로 해요. VAN 오류, 튕김, 끊김이 없는지 확인해요.
+7. 다 끝나면 그대로 써도 되고, 설정 → 앱에서 제거해도 돼요.
+
+어느 단계에서 무엇이 달랐는지 대화나 이슈에 적어 주세요. 캡처가 있으면 더 좋아요.
+
 ## 지우고 싶을 때
+
+설치 프로그램으로 설치했다면 설정 → 앱 → 설치된 앱 → **SafetySecurity** → 제거하면 끝이에요. 예약 작업과 파일까지 지워요.
+
+zip으로 설치했다면:
 
 ```powershell
 .\SafetySecurity.exe uninstall --purge

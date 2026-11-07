@@ -74,18 +74,32 @@ jobs:
           New-Item -ItemType Directory dist/tools | Out-Null
           Copy-Item tools/Test-OnMyPC.ps1 dist/tools/
           Compress-Archive -Path dist/* -DestinationPath "$name.zip"
-          Copy-Item out/SafetySecurity.exe "SafetySecurity.exe"
-          $lines = foreach ($f in @("$name.zip", "SafetySecurity.exe")) { "{0}  {1}" -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLower(), $f }
+          "ZIP=$name.zip" >> $env:GITHUB_ENV
+      - name: Installer (build + silent install/uninstall test)
+        if: steps.existing.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $setup = ./.github/scripts/build-installer.ps1 -Version $v -Exe out/SafetySecurity.exe -OutDir dist-installer
+          ./tests/integration/Test-Installer.ps1 -Setup $setup -Version $v
+          Copy-Item $setup .
+          "SETUP=$(Split-Path $setup -Leaf)" >> $env:GITHUB_ENV
+      - name: Checksums
+        if: steps.existing.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          $lines = foreach ($f in @($env:SETUP, $env:ZIP)) { "{0}  {1}" -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLower(), $f }
           $lines | Set-Content SHA256SUMS.txt -Encoding ascii
           Get-Content SHA256SUMS.txt
-          "ZIP=$name.zip" >> $env:GITHUB_ENV
       - name: Build provenance attestation
         if: steps.existing.outputs.exists != 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
+          # 설치된 exe도 'gh attestation verify'로 확인할 수 있게 exe 자체도 증명해요 (설치 프로그램은 exe를 그대로 복사해요).
           subject-path: |
+            ${{ env.SETUP }}
             ${{ env.ZIP }}
-            SafetySecurity.exe
+            out/SafetySecurity.exe
       - name: Create draft GitHub release
         if: steps.existing.outputs.exists != 'true'
         shell: pwsh
@@ -102,5 +116,5 @@ jobs:
           }
           else { $notes = @('--generate-notes') }
           # 태그가 아직 없으면 (workflow_dispatch) 이 커밋을 대상으로 해요. 태그는 초안을 Publish할 때 만들어져요.
-          gh release create "$env:TAG" "$env:ZIP" SafetySecurity.exe SHA256SUMS.txt `
+          gh release create "$env:TAG" "$env:SETUP" "$env:ZIP" SHA256SUMS.txt `
             --target "${{ github.sha }}" --title "SafetySecurity $env:TAG" --draft @notes @extra

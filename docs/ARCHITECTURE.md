@@ -35,6 +35,7 @@ flowchart LR
 | `SafetySecurity/Windows/AuthenticodeVerifier.cs` | `WinVerifyTrust` + 카탈로그, 폐기 확인 끔(오프라인) |
 | `SafetySecurity/Runtime/GameDetector.cs` | 핸들을 열지 않는 게임 감지 |
 | `SafetySecurity/Install/TaskInstaller.cs` | 작업 XML 등록 (`Core/Install/TaskXmlBuilder.cs`가 생성) |
+| `installer/SafetySecurity.iss` | 설치 프로그램 (Inno Setup). 파일, 시작 메뉴, 앱 목록, Win+R 이름(App Paths)만 맡고 작업 등록은 `install --quiet` / `uninstall --quiet`에 맡겨요. 설치 폴더는 `TaskInstaller`와 같아요. `AppId`는 고정이에요 |
 
 ## 안전장치
 

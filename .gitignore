@@ -11,3 +11,6 @@ artifacts/
 TestResults/
 *.swp
 .DS_Store
+dist/
+dist-installer/
+installer/Output/
