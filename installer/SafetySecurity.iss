@@ -95,6 +95,11 @@ korean.ShortcutComment=지금 검사하고 보고서 보기
 korean.RegisterFailed=자동 검사를 등록하지 못했어요 (코드 %1).%n%n시작 메뉴의 SafetySecurity로 직접 검사할 수는 있어요. 자세한 내용은 아래 파일에 있어요:%n%2
 korean.PurgeQuestion=검사 기록과 보고서도 지울까요?%n%n'아니요'를 누르면 남겨 두고, 다시 설치했을 때 이어서 써요.
 
+[Dirs]
+; 예전에 zip으로 install 해서 폴더가 이미 있었어도, 제거할 때 비어 있으면 지워요.
+; (Inno Setup은 원래 자기가 만든 폴더만 지워요.)
+Name: "{app}"; Flags: uninsalwaysuninstall
+
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion

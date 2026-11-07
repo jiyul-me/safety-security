@@ -156,6 +156,9 @@ function Uninstall-And-Assert($L) {
     }
     Check (-not (Test-Path -LiteralPath $L.Exe)) 'exe removed'
     Check (-not (Test-Path -LiteralPath $L.Dir)) 'install folder removed'
+    if (Test-Path -LiteralPath $L.Dir) {
+        Get-ChildItem -LiteralPath $L.Dir -Force -Recurse | ForEach-Object { Write-Host "        left: $($_.FullName)" }
+    }
     foreach ($n in $UserTasks + 'Admin') {
         Check ($null -eq (Get-TaskExe $n)) "task \SafetySecurity\$n removed"
     }
@@ -170,6 +173,10 @@ function Test-Mode([bool]$Admin) {
     $L = Get-Layout $Admin
     $label = if ($Admin) { 'administrator' } else { 'my account only' }
     Write-Host "== Setup: $label"
+    if (-not $Admin) {
+        # zip으로 install 한 적이 있는 PC처럼 설치 폴더가 이미 있는 경우도 확인해요 (제거할 때 폴더까지 지워져야 해요).
+        New-Item -ItemType Directory -Force $L.Dir | Out-Null
+    }
     Check ((Install-Setup $L "install-$($Admin)") -eq 0) 'Setup exits 0'
     Assert-Installed $L
 
