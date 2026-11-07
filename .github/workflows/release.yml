@@ -94,6 +94,13 @@ jobs:
         run: |
           $extra = @()
           if ("${{ steps.ver.outputs.prerelease }}" -eq 'true') { $extra += '--prerelease' }
+          # 릴리스 노트는 CHANGELOG.md의 해당 버전 섹션 + 파일 확인법이에요. 섹션이 비어 있으면 GitHub 자동 노트를 써요.
+          ./.github/scripts/release-notes.ps1 -Version "${{ steps.ver.outputs.version }}" -Repo "${{ github.repository }}" -Out release-notes.md
+          if (Test-Path release-notes.md) {
+            Get-Content release-notes.md
+            $notes = @('--notes-file', 'release-notes.md')
+          }
+          else { $notes = @('--generate-notes') }
           # 태그가 아직 없으면 (workflow_dispatch) 이 커밋을 대상으로 해요. 태그는 초안을 Publish할 때 만들어져요.
           gh release create "$env:TAG" "$env:ZIP" SafetySecurity.exe SHA256SUMS.txt `
-            --target "${{ github.sha }}" --title "SafetySecurity $env:TAG" --generate-notes --draft @extra
+            --target "${{ github.sha }}" --title "SafetySecurity $env:TAG" --draft @notes @extra

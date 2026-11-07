@@ -39,7 +39,8 @@
 
 ```powershell
 # 1. Releases에서 zip을 받아 압축을 풀고, 관리자 PowerShell에서 그 폴더로 이동
-cd "$env:USERPROFILE\Downloads\SafetySecurity-0.1.0-rc.1-win-x64"
+#    (폴더 이름은 받은 버전에 따라 달라요. `cd ` 뒤에 폴더를 끌어다 놓아도 돼요)
+cd "$env:USERPROFILE\Downloads\SafetySecurity-0.1.0-win-x64"
 .\SafetySecurity.exe install --admin
 
 # 2. 지금 한 번 검사해 보기 (보고서가 열려요)

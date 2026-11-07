@@ -53,7 +53,7 @@ squash merge를 하니까 **PR 제목**이 `main`의 커밋 메시지가 돼요.
 2. 둘 중 편한 방법으로 릴리스를 시작해요 (`v0.2.0-rc.1`처럼 `-`가 있으면 사전 릴리스):
    - **Actions** 탭 → **Release** → **Run workflow** → Branch `main`, 버전에 `v0.2.0` 입력 → Run
    - 또는 `main`에서 태그 push: `git tag v0.2.0 && git push origin v0.2.0`
-3. Release 워크플로가 테스트 → NativeAOT 빌드 → 통합 테스트 → zip·SHA256·출처 증명이 붙은 **초안 릴리스**를 만들어요.
+3. Release 워크플로가 테스트 → NativeAOT 빌드 → 통합 테스트 → zip·SHA256·출처 증명이 붙은 **초안 릴리스**를 만들어요. 릴리스 노트는 `CHANGELOG.md`의 해당 버전 섹션(사전 릴리스는 `[Unreleased]`)과 파일 확인법으로 채워져요 (`.github/scripts/release-notes.ps1`).
 4. 초안을 확인하고 "Publish release"를 눌러요. (Actions에서 시작했다면 이때 태그가 만들어져요.)
 
 ## 개발 환경
