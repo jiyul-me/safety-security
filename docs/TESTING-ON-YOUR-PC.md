@@ -20,10 +20,10 @@ CI(GitHub의 Windows 서버)로는 확인할 수 없는 것들을 실제 PC에�
 3. **압축을 푼 폴더로 이동**해요. PowerShell은 처음에 `C:\Users\내이름`에서 시작하고, `.\SafetySecurity.exe`는 "지금 있는 폴더 안의 파일"이라는 뜻이라 이동하지 않으면 "인식되지 않습니다" 오류가 나요.
 
    ```powershell
-   cd "$env:USERPROFILE\Downloads\SafetySecurity-0.1.0-rc.1-win-x64"
+   cd "$env:USERPROFILE\Downloads\SafetySecurity-0.1.0-win-x64"
    ```
 
-   > 팁: 폴더 이름이 다르면 `cd `(뒤에 띄어쓰기)까지 입력하고, 탐색기에서 압축을 푼 폴더를 PowerShell 창으로 **끌어다 놓은 뒤** Enter를 누르면 돼요.
+   > 팁: 폴더 이름은 받은 버전에 따라 달라요 (예: 사전 릴리스는 `SafetySecurity-0.2.0-rc.1-win-x64`). 폴더 이름이 다르면 `cd `(뒤에 띄어쓰기)까지 입력하고, 탐색기에서 압축을 푼 폴더를 PowerShell 창으로 **끌어다 놓은 뒤** Enter를 누르면 돼요.
 
 4. `dir`을 입력해서 `SafetySecurity.exe`와 `tools` 폴더가 보이는지 확인해요.
 5. 설치해요. 명령은 항상 **`.\`(점 + 역슬래시)** 로 시작해요.
