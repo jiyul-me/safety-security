@@ -69,7 +69,7 @@ function Install-Setup($L, [string]$Name) {
 function Get-TaskExe([string]$Name) {
     $t = Get-ScheduledTask -TaskPath '\SafetySecurity\' -TaskName $Name -ErrorAction SilentlyContinue
     if (-not $t) { return $null }
-    return @($t.Actions)[0].Execute
+    return "$(@($t.Actions)[0].Execute)".Trim('"')   # 작업 XML은 경로를 따옴표로 감싸요 (TaskXmlBuilder)
 }
 
 function Get-DefaultValue([string]$Key) {
@@ -150,7 +150,8 @@ function Uninstall-And-Assert($L) {
     Check ($code -eq 0) 'uninstaller exits 0'
     # 제거 프로그램은 임시 폴더의 복사본이 마저 지우고 끝나요. 다 지워질 때까지 최대 60초 기다려요.
     $deadline = (Get-Date).AddSeconds(60)
-    while ((Get-Date) -lt $deadline -and ((Test-Path -LiteralPath $L.Exe) -or (Test-Path -LiteralPath $L.AppsEntry))) {
+    # unins000.exe와 설치 폴더는 앱 목록 항목보다 늦게, 맨 마지막에 지워져요.
+    while ((Get-Date) -lt $deadline -and ((Test-Path -LiteralPath $L.Exe) -or (Test-Path -LiteralPath $L.AppsEntry) -or (Test-Path -LiteralPath $L.Dir))) {
         Start-Sleep -Milliseconds 500
     }
     Check (-not (Test-Path -LiteralPath $L.Exe)) 'exe removed'
