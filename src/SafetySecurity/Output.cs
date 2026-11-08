@@ -57,7 +57,9 @@ internal sealed class Output
         if (!HasConsole && !Quiet && _buffer.Length > 0)
         {
             var text = _buffer.ToString();
-            NativeMethods.MessageBox(IntPtr.Zero, text.Length > 3000 ? text[..3000] + "…" : text, caption, 0x40);
+            // Win+R처럼 몇 초 걸린 뒤 창을 띄우면 Windows가 다른 창 뒤에 숨길 수 있어서 맨 앞에 띄워요.
+            const uint IconInformation = 0x40, SetForeground = 0x10000, TopMost = 0x40000;
+            NativeMethods.MessageBox(IntPtr.Zero, text.Length > 3000 ? text[..3000] + "…" : text, caption, IconInformation | SetForeground | TopMost);
         }
     }
 

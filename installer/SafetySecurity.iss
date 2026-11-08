@@ -147,6 +147,9 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
+    { 검사나 메시지 창이 떠 있으면 exe 파일이 잠겨서 안 지워져요. 이 프로그램(SafetySecurity.exe)만 먼저 끝내요. }
+    if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM SafetySecurity.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      Log(Format('taskkill SafetySecurity.exe -> exit code %d', [ResultCode]));
     { 예약 작업과 알림 등록을 지워요. 파일·바로가기·앱 목록은 Inno Setup이 지워요. }
     Params := 'uninstall --quiet';
     if (not UninstallSilent()) and (MsgBox(CustomMessage('PurgeQuestion'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then

@@ -77,7 +77,7 @@ internal static class ToastNotifier
     }
 
     /// <summary>"검사하고 있어요" 알림. 검사가 끝나면 <see cref="ClearScanning"/>으로 알림 센터에서도 지워요.</summary>
-    public static bool TryShowScanning()
+    public static bool TryShowScanning(out string? problem)
     {
         try
         {
@@ -100,12 +100,18 @@ internal static class ToastNotifier
                 Group = ProgressGroup,
                 ExpirationTime = DateTimeOffset.Now.AddMinutes(15),
             };
-            ToastNotificationManager.CreateToastNotifier(AppUserModelId).Show(toast);
+            var notifier = ToastNotificationManager.CreateToastNotifier(AppUserModelId);
+            notifier.Show(toast);
+
+            // 설정에서 이 앱 알림이 꺼져 있으면 Windows가 조용히 버려요. 원인을 알 수 있게 알려줘요.
+            // (방해 금지 모드는 Windows가 알려주지 않아서 여기서 알 수 없어요.)
+            problem = notifier.Setting == NotificationSetting.Enabled ? null : "알림 설정: " + notifier.Setting;
             return true;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // 알림을 못 띄워도 검사는 그대로 해요.
+            problem = $"{ex.GetType().Name}: {ex.Message}";
             return false;
         }
     }
@@ -132,8 +138,23 @@ internal sealed class ScanningToast : IDisposable
     {
     }
 
-    public static ScanningToast? TryShow() =>
-        ToastNotifier.IsRegistered() && ToastNotifier.TryShowScanning() ? new ScanningToast() : null;
+    /// <param name="log">알림을 못 띄운 이유를 남길 곳 (logs\scan.log).</param>
+    public static ScanningToast? TryShow(Action<string> log)
+    {
+        if (!ToastNotifier.IsRegistered())
+        {
+            log("진행 알림: 알림 등록이 없어서 건너뛰어요 (설치하지 않고 실행)");
+            return null;
+        }
+
+        var shown = ToastNotifier.TryShowScanning(out var problem);
+        if (problem is not null)
+        {
+            log("진행 알림: " + problem);
+        }
+
+        return shown ? new ScanningToast() : null;
+    }
 
     public void Dispose() => ToastNotifier.ClearScanning();
 }

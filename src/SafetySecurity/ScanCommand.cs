@@ -97,7 +97,7 @@ internal static class ScanCommand
         }
 
         // 메서드가 끝날 때(보고서를 연 뒤, 중단·오류 포함) 알림을 지워요.
-        using var progress = o.ProgressToast ? ScanningToast.TryShow() : null;
+        using var progress = o.ProgressToast ? ScanningToast.TryShow(store.Log) : null;
 
         var sigCache = store.LoadSignatureCache(o.Scope);
         var files = new WinFileSystemView();
