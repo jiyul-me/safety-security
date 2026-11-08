@@ -53,6 +53,12 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
             list.RemoveAt(0);
         }
 
+        if (!output.HasConsole && !output.Quiet && command is not ("manual" or "scan"))
+        {
+            // Win+R·바로가기처럼 콘솔 없이 실행한 명령은 결과가 메시지 창으로만 보여서, 실행됐는지 기록해 둬요.
+            store.Log($"명령: {command} (결과는 메시지 창으로 보여줘요)");
+        }
+
         try
         {
             switch (command)

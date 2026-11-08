@@ -146,6 +146,9 @@ function Uninstall-And-Assert($L) {
         Check $false 'uninstaller present (cannot uninstall)'
         return
     }
+    # 검사가 도는 중(exe 잠김)에 제거해도 exe까지 지워져야 해요.
+    $scan = Start-Process -FilePath $L.Exe -ArgumentList 'scan', '--force', '--no-toast' -PassThru
+    Start-Sleep -Seconds 1
     $code = Invoke-Quiet $L.Uninstall @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') 'unins000.exe'
     Check ($code -eq 0) 'uninstaller exits 0'
     # 제거 프로그램은 임시 폴더의 복사본이 마저 지우고 끝나요. 다 지워질 때까지 최대 60초 기다려요.
@@ -154,7 +157,8 @@ function Uninstall-And-Assert($L) {
     while ((Get-Date) -lt $deadline -and ((Test-Path -LiteralPath $L.Exe) -or (Test-Path -LiteralPath $L.AppsEntry) -or (Test-Path -LiteralPath $L.Dir))) {
         Start-Sleep -Milliseconds 500
     }
-    Check (-not (Test-Path -LiteralPath $L.Exe)) 'exe removed'
+    Check (-not (Test-Path -LiteralPath $L.Exe)) 'exe removed (even with a scan running)'
+    Check ($scan.HasExited) 'running scan was closed by the uninstaller'
     Check (-not (Test-Path -LiteralPath $L.Dir)) 'install folder removed'
     if (Test-Path -LiteralPath $L.Dir) {
         Get-ChildItem -LiteralPath $L.Dir -Force -Recurse | ForEach-Object { Write-Host "        left: $($_.FullName)" }
