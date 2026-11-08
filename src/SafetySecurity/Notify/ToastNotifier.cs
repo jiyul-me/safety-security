@@ -13,6 +13,8 @@ namespace SafetySecurity.Notify;
 internal static class ToastNotifier
 {
     public const string AppUserModelId = "SafetySecurity.Scanner";
+    private const string ProgressTag = "scan";
+    private const string ProgressGroup = "progress";
 
     public static bool TryShow(IReadOnlyList<Finding> findings, string reportPath, bool firstRun, out string? error)
     {
@@ -60,5 +62,78 @@ internal static class ToastNotifier
         }
     }
 
+    /// <summary>알림 등록(install이 만든 AppUserModelId 키)이 있는지 읽기만 해서 확인해요.</summary>
+    public static bool IsRegistered()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\AppUserModelId\" + AppUserModelId);
+            return key is not null;
+        }
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>"검사하고 있어요" 알림. 검사가 끝나면 <see cref="ClearScanning"/>으로 알림 센터에서도 지워요.</summary>
+    public static bool TryShowScanning()
+    {
+        try
+        {
+            const string xml = """
+<toast duration="short">
+  <visual>
+    <binding template="ToastGeneric">
+      <text>SafetySecurity: 검사하고 있어요</text>
+      <text>끝나면 보고서가 열려요. 보통 1분 안에 끝나요.</text>
+    </binding>
+  </visual>
+  <audio silent="true" />
+</toast>
+""";
+            var doc = new XmlDocument();
+            doc.LoadXml(xml);
+            var toast = new ToastNotification(doc)
+            {
+                Tag = ProgressTag,
+                Group = ProgressGroup,
+                ExpirationTime = DateTimeOffset.Now.AddMinutes(15),
+            };
+            ToastNotificationManager.CreateToastNotifier(AppUserModelId).Show(toast);
+            return true;
+        }
+        catch (Exception)
+        {
+            // 알림을 못 띄워도 검사는 그대로 해요.
+            return false;
+        }
+    }
+
+    public static void ClearScanning()
+    {
+        try
+        {
+            ToastNotificationManager.History.Remove(ProgressTag, ProgressGroup, AppUserModelId);
+        }
+        catch (Exception)
+        {
+            // 이미 사라졌거나 지울 수 없으면 그냥 둬요 (15분 뒤 저절로 사라져요).
+        }
+    }
+
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+}
+
+/// <summary>직접 검사하는 동안만 "검사하고 있어요" 알림을 보여줘요. 설치(알림 등록)가 안 돼 있으면 아무것도 안 해요.</summary>
+internal sealed class ScanningToast : IDisposable
+{
+    private ScanningToast()
+    {
+    }
+
+    public static ScanningToast? TryShow() =>
+        ToastNotifier.IsRegistered() && ToastNotifier.TryShowScanning() ? new ScanningToast() : null;
+
+    public void Dispose() => ToastNotifier.ClearScanning();
 }

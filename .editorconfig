@@ -14,3 +14,8 @@ indent_size = 2
 [*.ps1]
 end_of_line = crlf
 charset = utf-8-bom
+
+# Inno Setup 스크립트: 한글 문구가 있어서 BOM이 필요해요 (ISCC가 UTF-8로 읽어요).
+[*.iss]
+end_of_line = crlf
+charset = utf-8-bom

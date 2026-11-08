@@ -9,6 +9,8 @@
     <AssemblyName>SafetySecurity</AssemblyName>
     <RootNamespace>SafetySecurity</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- 시작 메뉴·앱 목록·알림에 보이는 아이콘 (docs/assets/icon.svg에서 만들었어요) -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <InvariantGlobalization>false</InvariantGlobalization>
     <SatelliteResourceLanguages>ko;en</SatelliteResourceLanguages>

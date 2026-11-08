@@ -155,6 +155,39 @@ public class ReportTests
         Assert.Contains("default-src 'none'", html, StringComparison.Ordinal);
     }
 
+    private static ReportDocument OneFinding(ScanScope scope) => new()
+    {
+        Scope = scope,
+        Findings = [new ReportFinding { Id = "1a2b3c4d5e6f7a8b", Title = "t", Location = "l", Severity = Severity.Medium }],
+    };
+
+    [Fact]
+    public void IgnoreHintUsesCommandLineByDefault()
+    {
+        var html = HtmlReport.Render(OneFinding(ScanScope.User));
+        Assert.Contains("<code>SafetySecurity.exe ignore 1a2b3c4d5e6f7a8b</code>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("--scope admin", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<kbd>", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IgnoreHintUsesRunDialogWhenInstalled()
+    {
+        var html = HtmlReport.Render(OneFinding(ScanScope.User), runDialog: true);
+        Assert.Contains("<kbd>Win</kbd>+<kbd>R</kbd>", html, StringComparison.Ordinal);
+        Assert.Contains("<code>safetysecurity ignore 1a2b3c4d5e6f7a8b</code>", html, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IgnoreHintTargetsAdminRecordsForAdminScans(bool runDialog)
+    {
+        // 관리자 검사 항목은 관리자 기록(state.admin.json)에 숨겨야 실제로 숨겨져요.
+        var html = HtmlReport.Render(OneFinding(ScanScope.Admin), runDialog: runDialog);
+        Assert.Contains("ignore 1a2b3c4d5e6f7a8b --scope admin</code>", html, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void JsonRoundTripsWithKorean()
     {

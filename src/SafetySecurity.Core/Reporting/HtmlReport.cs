@@ -10,7 +10,10 @@ namespace SafetySecurity.Core.Reporting;
 /// </summary>
 public static class HtmlReport
 {
-    public static string Render(ReportDocument doc, string exeName = "SafetySecurity.exe")
+    /// <param name="doc">보고서 내용.</param>
+    /// <param name="exeName">숨기기 명령에 쓸 실행 파일 이름 (명령줄 안내일 때).</param>
+    /// <param name="runDialog">설치 프로그램이 Win+R 실행 이름(App Paths)을 등록했으면 true. 숨기기 안내를 Win+R 방법으로 보여줘요.</param>
+    public static string Render(ReportDocument doc, string exeName = "SafetySecurity.exe", bool runDialog = false)
     {
         var sb = new StringBuilder(64 * 1024);
         var high = doc.Findings.Count(f => f.Severity == Severity.High);
@@ -112,7 +115,7 @@ public static class HtmlReport
                 sb.Append("<h4>확인하는 법</h4><p class=\"advice\">").Append(E(f.Advice)).Append("</p>\n");
             }
 
-            sb.Append("<p class=\"ignore\">직접 확인해서 괜찮은 항목이면: <code>").Append(E(exeName)).Append(" ignore ").Append(E(f.Id)).Append("</code></p>\n");
+            IgnoreHint(sb, f.Id, doc.Scope, exeName, runDialog);
             sb.Append("</article>\n");
         }
 
@@ -141,6 +144,27 @@ public static class HtmlReport
 
         sb.Append("</section>\n</main>\n</body>\n</html>\n");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// 숨기기(ignore) 안내. 관리자 검사 항목은 관리자 기록에 숨겨야 해서 <c>--scope admin</c>을 붙여요.
+    /// 설치 프로그램으로 설치했으면 PowerShell 없이 Win+R로 바로 실행할 수 있어요.
+    /// </summary>
+    private static void IgnoreHint(StringBuilder sb, string id, ScanScope scope, string exeName, bool runDialog)
+    {
+        var args = " ignore " + id + (scope == ScanScope.Admin ? " --scope admin" : string.Empty);
+        sb.Append("<p class=\"ignore\">");
+        if (runDialog)
+        {
+            sb.Append("직접 확인해서 괜찮은 항목이면 다음 검사부터 숨길 수 있어요: <kbd>Win</kbd>+<kbd>R</kbd>을 누르고 <code>")
+                .Append(E("safetysecurity" + args)).Append("</code>를 입력하세요.");
+        }
+        else
+        {
+            sb.Append("직접 확인해서 괜찮은 항목이면: <code>").Append(E(exeName + args)).Append("</code>");
+        }
+
+        sb.Append("</p>\n");
     }
 
     private static void Tile(StringBuilder sb, string label, int count, string cls) =>
@@ -248,6 +272,7 @@ main{max-width:980px;margin:0 auto;padding:24px 16px 64px}h1{font-size:24px;marg
 .cat{color:var(--muted);font-size:13px}dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:6px 0}dt{color:var(--muted)}dd{margin:0;min-width:0;word-break:break-all}
 code{background:var(--code);border-radius:4px;padding:1px 5px;font:13px/1.5 Consolas,"D2Coding",monospace;word-break:break-all}
 ul{margin:4px 0;padding-left:20px}details{margin-top:10px}summary{cursor:pointer;color:var(--muted)}.advice{margin:4px 0}.ignore{color:var(--muted);font-size:13px}
+kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font:12px/1.5 Consolas,"D2Coding",monospace;background:var(--card)}
 .empty{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}.footer{margin-top:28px;color:var(--muted)}
 @media (max-width:600px){.summary{grid-template-columns:repeat(2,1fr)}dl{grid-template-columns:1fr}}
 """;

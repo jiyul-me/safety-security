@@ -136,9 +136,18 @@ internal static class TaskInstaller
         }
 
         output.Line($"작업 {deleted}개를 지웠어요.");
-        output.Line("실행 파일은 실행 중이라 스스로 지울 수 없어요. 아래 폴더를 직접 지워 주세요:");
-        output.Line("  " + UserInstallDir);
-        output.Line("  " + AdminInstallDir + " (관리자 설치를 했다면)");
+        if (InstalledBySetup())
+        {
+            // 설치 프로그램(Setup)으로 설치했으면 Windows 앱 목록에서 제거해야 파일·바로가기까지 지워져요.
+            output.Line("설치 프로그램으로 설치했다면 설정 → 앱 → 설치된 앱에서 SafetySecurity를 제거하세요. 파일과 바로가기까지 지워져요.");
+        }
+        else
+        {
+            output.Line("실행 파일은 실행 중이라 스스로 지울 수 없어요. 아래 폴더를 직접 지워 주세요:");
+            output.Line("  " + UserInstallDir);
+            output.Line("  " + AdminInstallDir + " (관리자 설치를 했다면)");
+        }
+
         return denied == 0 ? 0 : 1;
     }
 
@@ -161,7 +170,11 @@ internal static class TaskInstaller
                     return true;
                 }
 
-                output.Line($"작업 등록 실패 ({name}): {SchtasksSource.FirstLine(r?.Stderr ?? "실행 실패")}");
+                var reason = SchtasksSource.FirstLine(r?.Stderr ?? "실행 실패");
+                output.Line($"작업 등록 실패 ({name}): {reason}");
+
+                // 설치 프로그램은 --quiet로 실행해서 화면에 안 보이니, 원인을 로그에도 남겨요.
+                store.Log($"install: 작업 등록 실패 ({name}): {reason}");
             }
 
             return false;
@@ -178,6 +191,10 @@ internal static class TaskInstaller
             }
         }
     }
+
+    /// <summary>Inno Setup 설치 프로그램은 exe 옆에 제거 프로그램(unins000.exe)을 둬요.</summary>
+    private static bool InstalledBySetup() =>
+        Environment.ProcessPath is { } exe && File.Exists(Path.Combine(Path.GetDirectoryName(exe) ?? string.Empty, "unins000.exe"));
 
     private static bool TaskExists(string name) => Schtasks(["/query", "/tn", name])?.ExitCode == 0;
 

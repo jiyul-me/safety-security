@@ -53,3 +53,10 @@ Settings → **Code security**
 - [ ] Actions 로그·아티팩트에 민감한 정보가 없는지 (이 프로젝트는 비밀 값을 쓰지 않아요)
 - [ ] Settings → General → Danger Zone → **Change visibility** → Public
 - [ ] 공개 직후 CodeQL 워크플로가 실행되는지 Actions에서 확인
+
+## 7. 설치 프로그램
+
+- 릴리스에는 `SafetySecurity-Setup-<버전>.exe`, zip(명령줄·시험용), `SHA256SUMS.txt`가 올라가요. Release 워크플로가 설치 프로그램을 만든 뒤 조용히 설치·제거해 보고 올려요.
+- `installer/SafetySecurity.iss`의 `AppId`는 **절대 바꾸지 마세요.** 바꾸면 Windows가 다른 프로그램으로 알아서 업데이트·제거가 꼬여요.
+- 설치 폴더(`{autopf}\SafetySecurity`)는 `src/SafetySecurity/Install/TaskInstaller.cs`의 폴더와 같아야 해요. 한쪽을 바꾸면 다른 쪽도 바꿔요.
+- 코드 서명 인증서가 없어서 SmartScreen 경고가 떠요. 오픈소스 무료 서명(예: SignPath Foundation)은 나중에 따로 검토해요.

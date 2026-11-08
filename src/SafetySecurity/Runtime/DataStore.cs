@@ -56,14 +56,14 @@ internal sealed class DataStore
         WriteAtomic(SigCachePath(scope), JsonSerializer.Serialize(cache, SafetyJson.Context.DictionaryStringCachedSignature));
 
     /// <summary>보고서를 HTML과 JSON으로 써요. 돌려주는 값은 HTML 경로.</summary>
-    public string WriteReport(ReportDocument doc, string? reportDir, string exeName)
+    public string WriteReport(ReportDocument doc, string? reportDir, string exeName, bool runDialog)
     {
         var dir = reportDir ?? ReportsDir;
         var stamp = doc.StartedUtc.ToLocalTime().ToString("yyyy-MM-dd_HHmmss", CultureInfo.InvariantCulture);
         var baseName = $"{stamp}_{(doc.Scope == ScanScope.Admin ? "admin" : "user")}";
         var html = Path.Combine(dir, baseName + ".html");
         WriteAtomic(Path.Combine(dir, baseName + ".json"), JsonSerializer.Serialize(doc, SafetyJson.Context.ReportDocument));
-        WriteAtomic(html, HtmlReport.Render(doc, exeName));
+        WriteAtomic(html, HtmlReport.Render(doc, exeName, runDialog));
         if (reportDir is null)
         {
             PruneReports(dir);

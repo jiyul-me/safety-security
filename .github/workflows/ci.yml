@@ -54,9 +54,18 @@ jobs:
       - name: PC test script on Windows PowerShell 5.1 (non-interactive)
         shell: powershell
         run: .\tools\Test-OnMyPC.ps1 -Exe out\SafetySecurity.exe -NonInteractive
+      - name: Installer (build + silent install/uninstall, both modes)
+        shell: pwsh
+        run: |
+          # CI 빌드는 Directory.Build.props의 버전을 그대로 써요.
+          $v = @(([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version)[0]
+          $setup = ./.github/scripts/build-installer.ps1 -Version $v -Exe out/SafetySecurity.exe -OutDir dist-installer
+          ./tests/integration/Test-Installer.ps1 -Setup $setup -Version $v
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: SafetySecurity-win-x64-ci
-          path: out/SafetySecurity.exe
+          path: |
+            out/SafetySecurity.exe
+            dist-installer/*.exe
           retention-days: 7

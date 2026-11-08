@@ -91,8 +91,10 @@ public class SampleReportTests
     [Fact]
     public void SampleRendersAndCanBeWritten()
     {
-        var html = HtmlReport.Render(Sample());
+        // 설치 프로그램으로 설치한 사람이 보는 보고서 (숨기기 안내가 Win+R 방법)
+        var html = HtmlReport.Render(Sample(), runDialog: true);
         Assert.Contains("COM-001", html, StringComparison.Ordinal);
+        Assert.Contains("<kbd>Win</kbd>", html, StringComparison.Ordinal);
         Assert.Contains("새 항목", html, StringComparison.Ordinal);
         Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
 

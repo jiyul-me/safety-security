@@ -37,20 +37,25 @@
 
 ## 빠른 시작
 
-```powershell
-# 1. Releases에서 zip을 받아 압축을 풀고, 관리자 PowerShell에서 그 폴더로 이동
-#    (폴더 이름은 받은 버전에 따라 달라요. `cd ` 뒤에 폴더를 끌어다 놓아도 돼요)
-cd "$env:USERPROFILE\Downloads\SafetySecurity-0.1.0-win-x64"
-.\SafetySecurity.exe install --admin
+PowerShell은 필요 없어요.
 
-# 2. 지금 한 번 검사해 보기 (보고서가 열려요)
-.\SafetySecurity.exe
+1. [Releases](https://github.com/jiyul-me/safety-security/releases/latest)에서 **`SafetySecurity-Setup-x.y.z.exe`** 를 받아요.
+2. 받은 파일을 더블클릭해요. "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 눌러요 ([왜 뜨나요?](#설치)).
+3. 설치 방식을 골라요.
+   - **내 계정에만** (권장): 권한 요청 없이 바로 설치돼요.
+   - **관리자 권한으로**: Defender 제외 목록, 숨겨진 예약 작업, WMI 구독까지 검사해요. 권한 요청 창이 떠요.
+4. 마지막 화면에서 **지금 첫 검사하기**를 켜 둔 채 마침을 누르면, 검사가 끝난 뒤 보고서가 열려요.
 
-# 3. 상태 확인
-.\SafetySecurity.exe status
-```
+> 설치 프로그램은 v0.2.0부터 있어요. 그 전 버전은 아래 [명령줄로 설치하기](#설치)를 보세요.
 
 그다음부터는 신경 쓸 필요가 없어요. 로그온할 때, 하루 한 번, 새 서비스가 설치될 때 알아서 잠깐 검사하고, 새로운 의심 항목이 있을 때만 알림을 띄워요.
+
+| 하고 싶은 것 | 방법 |
+|---|---|
+| 지금 검사하기 | 시작 메뉴 → **SafetySecurity** (검사하는 동안 알림이 뜨고, 끝나면 보고서가 열려요) |
+| 괜찮은 항목 숨기기 | 보고서에 적힌 대로 <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity ignore <ID>` |
+| 상태 보기 | <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity status` |
+| 제거하기 | 설정 → 앱 → 설치된 앱 → **SafetySecurity** → 제거 (예약 작업까지 지워요) |
 
 <p align="center">
   <picture>
@@ -96,26 +101,43 @@ cd "$env:USERPROFILE\Downloads\SafetySecurity-0.1.0-win-x64"
 **오탐을 줄이는 방법**
 - 유효한 디지털 서명이 있으면 위험도를 낮춰요 (Windows 카탈로그 서명도 확인해요).
 - 첫 검사 결과를 **베이스라인**으로 저장해요. 그 뒤로는 *새로 생긴* 항목만 알림을 띄워요. 첫 검사에서는 이미 감염됐을 때를 대비해 '높음'만 알려요.
-- 직접 확인해서 괜찮은 항목은 `SafetySecurity.exe ignore <ID>`로 숨길 수 있어요.
+- 직접 확인해서 괜찮은 항목은 숨길 수 있어요. 방법은 보고서의 항목마다 적혀 있어요 (설치 프로그램으로 설치했다면 <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity ignore <ID>`).
 
 ## 설치
 
-1. [Releases](../../releases)에서 `SafetySecurity-x.y.z-win-x64.zip`을 받아 압축을 풀어요.
-2. (권장) 받은 파일이 진짜인지 확인해요.
-   ```powershell
-   Get-FileHash .\SafetySecurity.exe -Algorithm SHA256   # SHA256SUMS.txt와 비교
-   gh attestation verify .\SafetySecurity.exe --repo jiyul-me/safety-security
-   ```
-3. PowerShell이나 명령 프롬프트에서 설치해요.
-   ```powershell
-   .\SafetySecurity.exe install           # 일반 사용자 권한
-   .\SafetySecurity.exe install --admin   # 관리자 검사도 추가 (권장, UAC 창이 떠요)
-   ```
+**설치 프로그램 (권장)**: [빠른 시작](#빠른-시작)대로 `SafetySecurity-Setup-x.y.z.exe`를 실행하면 돼요.
+설치 프로그램은 실행 파일을 아래 위치에 두고 시작 메뉴·앱 목록에 등록해요. 작업 스케줄러 등록은 `SafetySecurity.exe install`이 해요.
 
-> 코드 서명 인증서가 아직 없어서 처음 실행할 때 SmartScreen 경고("Windows의 PC 보호")가 뜰 수 있어요.
+| 설치 방식 | 실행 파일 위치 | 권한 요청 |
+|---|---|---|
+| 내 계정에만 | `%LOCALAPPDATA%\Programs\SafetySecurity` | 없음 |
+| 관리자 권한으로 | `C:\Program Files\SafetySecurity` | UAC 창 |
+
+**받은 파일이 진짜인지 확인하기 (권장)**
+```powershell
+Get-FileHash .\SafetySecurity-Setup-x.y.z.exe -Algorithm SHA256   # SHA256SUMS.txt와 비교
+gh attestation verify .\SafetySecurity-Setup-x.y.z.exe --repo jiyul-me/safety-security
+# 설치된 실행 파일도 확인할 수 있어요 (관리자 설치면 C:\Program Files\SafetySecurity\SafetySecurity.exe)
+gh attestation verify "$env:LOCALAPPDATA\Programs\SafetySecurity\SafetySecurity.exe" --repo jiyul-me/safety-security
+```
+
+> 코드 서명 인증서가 아직 없어서 처음 실행할 때 SmartScreen 경고("Windows의 PC 보호")가 떠요.
 > '추가 정보' → '실행'을 누르면 돼요. 위의 해시·출처 증명으로 파일이 진짜인지 먼저 확인하세요.
 
-**관리자 설치(`--admin`)를 권장하는 이유**
+<details>
+<summary><b>명령줄로 설치하기 (zip)</b></summary>
+
+1. Releases에서 `SafetySecurity-x.y.z-win-x64.zip`을 받아 압축을 풀고, PowerShell에서 그 폴더로 이동해요 (`cd ` 뒤에 폴더를 끌어다 놓아도 돼요).
+2. 설치해요. 실행 파일을 위 표의 위치로 복사하고 작업을 등록해요.
+   ```powershell
+   .\SafetySecurity.exe install           # 내 계정에만
+   .\SafetySecurity.exe install --admin   # 관리자 검사도 추가 (UAC 창이 떠요)
+   ```
+3. 제거할 때는 `.\SafetySecurity.exe uninstall`(관리자 설치였다면 관리자 PowerShell)을 실행하고, 위 표의 폴더를 지워요.
+
+</details>
+
+**관리자 권한으로 설치하면 좋은 점**
 - 실행 파일이 `Program Files`에 들어가서, 일반 권한 악성코드가 검사기 자체를 바꿔치기하기 어려워져요.
 - Defender 로컬 제외 목록, 숨겨진 예약 작업, WMI 구독처럼 관리자만 읽을 수 있는 항목도 확인해요.
 
@@ -127,7 +149,7 @@ cd "$env:USERPROFILE\Downloads\SafetySecurity-0.1.0-win-x64"
 | `Daily` | 하루 한 번 (꺼져 있었으면 켜진 뒤) | 전체 검사 |
 | `ServiceInstalled` | 새 서비스 설치 (System 로그 이벤트 7045) | 서비스·예약 작업만 빠르게 검사 |
 | `Retry` | 30분마다 | 미뤄둔 검사가 있을 때만 검사, 없으면 0.1초 안에 종료 |
-| `Admin` (`--admin`만) | 로그온 + 30분마다 확인, 하루 한 번 | 관리자 전용 항목 검사 |
+| `Admin` (관리자 설치만) | 로그온 + 30분마다 확인, 하루 한 번 | 관리자 전용 항목 검사 |
 
 모든 작업은 우선순위 7(낮음), 최대 15분 제한, 중복 실행 안 함으로 설정돼요.
 
@@ -142,6 +164,8 @@ SafetySecurity.exe ignore <ID>        항목 숨기기 (ID는 보고서에 있�
 SafetySecurity.exe verify <파일>      파일 하나의 디지털 서명 확인
 SafetySecurity.exe uninstall [--purge]
 ```
+
+설치 프로그램으로 설치했다면 PowerShell 없이 <kbd>Win</kbd>+<kbd>R</kbd>에서 `safetysecurity status`처럼 실행할 수 있어요. 결과는 메시지 창으로 보여줘요.
 
 의심 항목이 있으면 Windows 알림이 뜨고, 누르면 HTML 보고서가 열려요. 보고서에는 항목마다 아래 내용이 있어요.
 - **왜 의심스러운지**
@@ -196,6 +220,7 @@ dotnet publish src/SafetySecurity -c Release -r win-x64 -p:PublishAot=false --se
 src/SafetySecurity.Core/   규칙·스캐너·보고서 (Windows API 없음, 어디서나 테스트 가능)
 src/SafetySecurity/        Windows 연결부: 레지스트리, 서명 확인(WinVerifyTrust), 게임 감지, 작업 스케줄러, 알림
 tests/                     단위 테스트 (가짜 레지스트리·파일 시스템), Windows 통합 테스트
+installer/                 설치 프로그램 (Inno Setup 스크립트)
 tools/Test-OnMyPC.ps1      내 PC에서 안전하게 시험하는 안내형 스크립트
 docs/                      탐지 규칙, 구조, 시험 안내, 저장소 관리
 ```
@@ -222,4 +247,4 @@ docs/                      탐지 규칙, 구조, 시험 안내, 저장소 관�
 - **Read-only and offline.** It never modifies the system and has no network code. Authenticode checks run with revocation checks disabled and cache-only URL retrieval.
 - Both guarantees are enforced at build time (`BannedSymbols.txt`) and in tests (`ForbiddenApiTests`).
 
-Install it with `SafetySecurity.exe install` (or `install --admin`, recommended). Findings show up as a Windows toast that opens a self-contained HTML report. Each finding includes evidence (signature, signer, SHA-256, timestamps) and manual remediation steps.
+Download `SafetySecurity-Setup-x.y.z.exe` from Releases and run it; no PowerShell needed. Choose *my account only* (no permission prompt) or *administrator* (also checks Defender exclusions, hidden tasks and WMI, and keeps the scanner in Program Files). Scan any time from the Start menu, and uninstall from Settings → Apps. From the zip you can still install on the command line with `SafetySecurity.exe install [--admin]`. Findings show up as a Windows toast that opens a self-contained HTML report. Each finding includes evidence (signature, signer, SHA-256, timestamps) and manual remediation steps.
