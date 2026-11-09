@@ -64,6 +64,22 @@ internal sealed class Output
     }
 
     /// <summary>
+    /// 콘솔 없이(Win+R·바로가기) 실행했을 때 '예/아니요' 창으로 한 번 더 물어요. 콘솔이나 --quiet이면 묻지 않고 true예요
+    /// (스크립트·설치 프로그램이 멈추지 않게).
+    /// </summary>
+    public bool Confirm(string text, string caption)
+    {
+        if (HasConsole || Quiet)
+        {
+            return true;
+        }
+
+        const uint YesNo = 0x4, IconQuestion = 0x20, SetForeground = 0x10000, TopMost = 0x40000;
+        const int IdYes = 6;
+        return NativeMethods.MessageBox(IntPtr.Zero, text, caption, YesNo | IconQuestion | SetForeground | TopMost) == IdYes;
+    }
+
+    /// <summary>
     /// 출력이 진짜 파일이나 파이프로 연결됐는지 (예: PowerShell 파이프, CI의 출력 파일).
     /// Console.IsOutputRedirected는 Win+R·시작 메뉴처럼 출력 핸들이 없을 때도 true라서
     /// 메시지 창과 알림이 안 떴어요 (v0.2.0-rc.2 시험에서 발견). 그래서 핸들 종류를 직접 봐요.

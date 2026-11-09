@@ -34,8 +34,28 @@ public sealed class Finding
     /// <summary>사용자가 직접 확인하는 방법.</summary>
     public string? Advice { get; init; }
 
-    /// <summary>이전 검사에 없던 새 항목인지 (BaselineEvaluator가 채워요).</summary>
+    /// <summary>
+    /// 이전 검사에 없던 새 항목이거나, 있던 항목이 더 위험해졌거나 파일이 바뀌었는지 (BaselineEvaluator가 채워요).
+    /// 알림은 이 값이 true인 항목에만 띄워요.
+    /// </summary>
     public bool IsNew { get; set; }
+
+    /// <summary>
+    /// 지난 검사에도 있던 항목인데 달라져서 다시 알리는 경우, 무엇이 달라졌는지 (예: "위험도가 올라갔어요 (보통 → 높음)").
+    /// 처음 보는 항목이나 그대로인 항목은 null이에요.
+    /// </summary>
+    public string? ChangeNote { get; set; }
+
+    /// <summary>
+    /// 사용자가 숨긴(ignore) 항목인데 숨긴 뒤로 달라져서 다시 보여주는 경우, 그 이유. 숨긴 적 없으면 null이에요.
+    /// </summary>
+    public string? IgnoreNote { get; set; }
+
+    /// <summary>
+    /// 예전 버전이 같은 항목에 쓰던 ID (ID 계산 방식을 바꾼 스캐너만 채워요).
+    /// 베이스라인과 숨김 목록을 새 ID로 옮겨서, 업데이트 뒤에 같은 항목을 '새 항목'으로 다시 알리지 않게 해요.
+    /// </summary>
+    public IReadOnlyList<string> PreviousIds { get; init; } = [];
 
     private string? _id;
 

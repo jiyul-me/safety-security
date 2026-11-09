@@ -39,6 +39,9 @@ public static class ExecutableAssessor
     public const long MaxHashBytes = 64L * 1024 * 1024;
     public const string NotCheckedReason = "검사기는 네트워크에 접속하지 않으려고 이 파일을 열어 보지 않았어요 (서명·크기·시각 확인 안 함).";
 
+    /// <summary>Store·MSIX 앱 파일의 '서명' 증거. 파일 단위 서명은 없지만 패키지로 서명돼 있어요.</summary>
+    public const string PackageSignatureText = "패키지 서명 (파일 단위 서명 없음, Windows가 설치 때 확인)";
+
     public static ExecutableAssessment Assess(ScanContext ctx, string rawPath, bool includeHash = true)
     {
         var path = ctx.Paths.Expand(rawPath.Trim().Trim('"'));
@@ -134,7 +137,7 @@ public static class ExecutableAssessor
         result.Reasons.AddRange(reasons);
         result.Evidence.Add(new("경로 종류", PathClassifier.ToKorean(kind)));
         result.Evidence.Add(new("서명", kind == PathKind.PackagedApp && sig.Status is SignatureStatus.Unsigned or SignatureStatus.Untrusted
-            ? "패키지 서명 (파일 단위 서명 없음, Windows가 설치 때 확인)"
+            ? PackageSignatureText
             : sig.ToKorean()));
         if (ctx.Classifier.PackageFolderName(path) is { } package)
         {

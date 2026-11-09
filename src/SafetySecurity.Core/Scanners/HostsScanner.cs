@@ -24,6 +24,34 @@ public sealed class HostsScanner : IScanner
         "shiftup.co.kr", "nikke-kr.com", "level-infinite.com", "proximabeta.com",
     ];
 
+    // 위 도메인 가운데 하위 주소가 아주 많은 큰 포털·서비스. 여기서는 텔레메트리·광고 주소를 막은 줄을 '참고'로 낮춰요.
+    // 보안 프로그램·업데이트·게임·결제 도메인은 하위 주소를 막아도 계속 '높음'이에요.
+    private static readonly HashSet<string> PortalDomains = new(StringComparer.Ordinal)
+    {
+        "microsoft.com", "windows.com", "live.com", "office.com",
+        "google.com", "googleapis.com", "gstatic.com", "youtube.com",
+        "naver.com", "daum.net", "kakao.com",
+    };
+
+    // 이런 말이 들어간 주소는 업데이트·로그인·보안 기능이라, 텔레메트리처럼 보여도 낮추지 않아요.
+    private static readonly string[] ProtectedWords =
+    [
+        "update", "upgrade", "download", "delivery", "login", "logon", "signin", "signup", "account", "auth", "passport", "secur",
+        "defender", "smartscreen", "spynet", "wdcp", "definition", "safebrowsing", "connecttest", "ncsi", "activation", "licens",
+        "ocsp", "crl", "pki", "cert",
+    ];
+
+    // 막아도 보안에는 영향이 없는 텔레메트리(사용 정보 전송)·광고 주소. Windows 최적화·광고 차단 목록이 흔히 넣어요.
+    private static readonly string[] TrackingSuffixes = ["data.microsoft.com", "telemetry.microsoft.com", "aria.microsoft.com"];
+
+    private static readonly string[] TrackingLabelPrefixes =
+    [
+        "telemetry", "vortex", "watson", "settings-win", "settings-sandbox", "adservice", "pagead", "adserver", "adsense", "adssettings",
+        "doubleclick", "analytics", "tracking", "beacon", "stats", "metrics",
+    ];
+
+    private static readonly HashSet<string> TrackingLabels = new(StringComparer.Ordinal) { "ad", "ads", "sqm", "oca", "telecommand" };
+
     public string Category => CategoryName;
 
     public string DisplayName => "hosts 파일";
@@ -45,6 +73,8 @@ public sealed class HostsScanner : IScanner
     public static List<Finding> Analyze(string content, string path)
     {
         var findings = new List<Finding>();
+        // 같은 줄(같은 IP·주소)이 여러 번 있어도 항목은 하나예요. 예전 버전이 쓰던 '줄 번호가 들어간 ID'는 모두 기억해요.
+        var byTarget = new Dictionary<string, (Finding Finding, List<string> PreviousIds)>(StringComparer.OrdinalIgnoreCase);
         var lineNo = 0;
         foreach (var rawLine in content.Split('\n'))
         {
@@ -73,10 +103,23 @@ public sealed class HostsScanner : IScanner
                     continue;
                 }
 
+                var target = $"{ip} {h}";
+                if (byTarget.TryGetValue(target, out var seen))
+                {
+                    seen.PreviousIds.Add(LegacyId(path, lineNo, target));
+                    continue;
+                }
+
                 var sensitive = SensitiveDomains.FirstOrDefault(d => h == d || h.EndsWith("." + d, StringComparison.Ordinal));
                 Severity severity;
                 string reason;
-                if (sensitive is not null)
+                if (sensitive is not null && isLoopbackish && IsTrackingBlock(h, sensitive))
+                {
+                    // 텔레메트리·광고 주소를 0.0.0.0/127.0.0.1로 막은 줄. Windows 최적화 도구나 광고 차단 목록이 넣는 흔한 항목이에요.
+                    severity = Severity.Info;
+                    reason = $"'{h}'를 막아요. 텔레메트리(사용 정보 전송)·광고 주소라서 Windows 최적화 도구나 광고 차단 목록이 흔히 넣는 항목이에요. 보안 기능(업데이트·로그인·백신)과는 관계없어서 위험할 가능성은 낮아요.";
+                }
+                else if (sensitive is not null)
                 {
                     severity = Severity.High;
                     reason = isLoopbackish
@@ -94,22 +137,60 @@ public sealed class HostsScanner : IScanner
                     continue;
                 }
 
-                findings.Add(new Finding
+                // 위치에는 줄 번호를 넣지 않아요. 위에 줄이 늘거나 줄어도(Docker·VPN 도구가 줄을 더하는 등) ID가 그대로라서,
+                // 숨긴 항목이 다시 나타나거나 같은 항목을 '새 항목'으로 다시 알리지 않아요. 줄 번호는 증거에만 적어요.
+                var previous = new List<string> { LegacyId(path, lineNo, target) };
+                var finding = new Finding
                 {
                     RuleId = "HOST-001",
                     Category = CategoryName,
                     Severity = severity,
                     Title = $"hosts 파일이 {h}를 바꿔요",
-                    Location = $"{path}:{lineNo}",
-                    Target = $"{ip} {h}",
+                    Location = path,
+                    Target = target,
                     Reasons = [reason],
                     Evidence = [new("줄 번호", lineNo.ToString(System.Globalization.CultureInfo.InvariantCulture)), new("내용", rawLine.Trim())],
                     Advice = Advice.Hosts,
-                });
+                    PreviousIds = previous,
+                };
+                byTarget[target] = (finding, previous);
+                findings.Add(finding);
             }
         }
 
         return findings;
+    }
+
+    /// <summary>예전 버전(위치에 줄 번호를 넣던 때)의 ID. 업데이트 뒤 베이스라인·숨김 목록을 새 ID로 옮길 때 써요.</summary>
+    private static string LegacyId(string path, int lineNo, string target) =>
+        Finding.ComputeId(CategoryName, $"{path}:{lineNo}", target);
+
+    /// <summary>
+    /// 큰 포털 도메인의 텔레메트리·광고 주소를 막은 줄인지. 도메인 자체(예: google.com, www.google.com)와
+    /// 업데이트·로그인·보안 주소는 절대 낮추지 않아요. 확실한 텔레메트리·광고 주소만 골라요.
+    /// </summary>
+    private static bool IsTrackingBlock(string host, string domain)
+    {
+        if (!PortalDomains.Contains(domain) || host == domain || host == "www." + domain)
+        {
+            return false;
+        }
+
+        if (ProtectedWords.Any(w => host.Contains(w, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        if (TrackingSuffixes.Any(t => host == t || host.EndsWith("." + t, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        var labels = host[..^(domain.Length + 1)].Split('.');
+        return labels.Any(l => TrackingLabels.Contains(l)
+            || (l.Length > 2 && l.StartsWith("ad", StringComparison.Ordinal) && l[2..].All(char.IsAsciiDigit))
+            || (l.Length > 3 && l.StartsWith("ads", StringComparison.Ordinal) && l[3..].All(char.IsAsciiDigit))
+            || TrackingLabelPrefixes.Any(p => l.StartsWith(p, StringComparison.Ordinal)));
     }
 
     private static bool IsPrivate(IPAddress addr)

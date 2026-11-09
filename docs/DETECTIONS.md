@@ -91,7 +91,7 @@
 
 | ID | 내용 | 위험도 |
 |---|---|---|
-| `HOST-001` | hosts 파일이 보안·업데이트·게임·포털 사이트를 막거나 다른 IP로 보냄 | **높음**. 그 밖의 외부 IP 고정은 낮음. 광고 차단용 `0.0.0.0` 목록은 무시 |
+| `HOST-001` | hosts 파일이 보안·업데이트·게임·포털 사이트를 막거나 다른 IP로 보냄. 항목 ID에 줄 번호를 넣지 않아서 줄이 늘거나 줄어도 숨김이 유지돼요 | **높음**. 단, 큰 포털(microsoft.com, google.com, naver.com 등)의 텔레메트리·광고 주소(예. `vortex.data.microsoft.com`, `adservice.google.com`)를 `0.0.0.0`·`127.0.0.1`로 막은 줄은 참고 (업데이트·로그인·보안 주소는 계속 높음). 그 밖의 외부 IP 고정은 낮음. 그 밖의 광고 차단용 `0.0.0.0` 목록은 무시 |
 | `WMI-001` | WMI 영구 구독 (CommandLine/ActiveScript consumer) — 관리자 검사, T1546.003 | **높음** |
 | `FILE-001` | 최근 14일 안에 AppData·LocalAppData·ProgramData·Public에 생긴 서명 없는 실행 파일 | 보통 (Temp는 설치 프로그램이 많이 써서 낮음) |
 | `FILE-002` | `invoice.pdf.exe` 같은 이중 확장자, 확장자를 속인 실행 파일 (예. `.jpg`인데 PE) | **높음** |

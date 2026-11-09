@@ -110,3 +110,72 @@ internal sealed class ScanLock : IDisposable
         _mutex.Dispose();
     }
 }
+
+/// <summary>
+/// 기록 파일(state*.json) 하나를 읽고-고치고-쓰는 동안만 잡는 짧은 잠금.
+/// 몇 분 걸리는 검사와 ignore·unignore 명령이 서로의 변경을 덮어쓰지 않게 해요. 검사 잠금(<see cref="ScanLock"/>)과 달리
+/// 검사 내내 잡지 않아서, 검사 중에도 ignore 명령은 기다리지 않고 바로 끝나요. 우리 프로세스끼리 쓰는 이름 있는 뮤텍스라
+/// 다른 프로세스를 열지 않아요.
+/// </summary>
+internal sealed class StateLock : IDisposable
+{
+    private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
+    private readonly Mutex? _mutex;
+
+    private StateLock(Mutex? mutex) => _mutex = mutex;
+
+    /// <summary>잠금을 잡아요. 10초 안에 못 잡거나 잠금을 열 수 없으면 기록만 남기고 잠금 없이 계속해요.</summary>
+    public static StateLock Acquire(string statePath, Action<string> log)
+    {
+        // 파일 경로마다 다른 이름: 사용자 폴더와 관리자 폴더의 기록은 서로 다른 잠금을 써요.
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(statePath).ToLowerInvariant()));
+        var name = @"Local\SafetySecurity.State." + Convert.ToHexStringLower(hash.AsSpan(0, 8));
+        Mutex mutex;
+        try
+        {
+            mutex = new Mutex(false, name);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or WaitHandleCannotBeOpenedException or IOException)
+        {
+            log($"기록 잠금을 열지 못해서 잠금 없이 계속해요 ({ex.GetType().Name})");
+            return new StateLock(null);
+        }
+
+        try
+        {
+            bool acquired;
+            try
+            {
+                acquired = mutex.WaitOne(Wait);
+            }
+            catch (AbandonedMutexException)
+            {
+                // 다른 프로세스가 기록을 쓰다가 비정상 종료됐어요. 소유권은 이미 우리에게 넘어왔어요.
+                acquired = true;
+            }
+
+            if (acquired)
+            {
+                return new StateLock(mutex);
+            }
+        }
+        catch
+        {
+            mutex.Dispose();
+            throw;
+        }
+
+        mutex.Dispose();
+        log("기록 잠금을 10초 안에 얻지 못해서 잠금 없이 계속해요.");
+        return new StateLock(null);
+    }
+
+    public void Dispose()
+    {
+        if (_mutex is not null)
+        {
+            _mutex.ReleaseMutex();
+            _mutex.Dispose();
+        }
+    }
+}

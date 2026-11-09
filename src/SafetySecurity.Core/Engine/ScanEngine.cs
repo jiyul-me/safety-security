@@ -31,6 +31,9 @@ public sealed class ScanResult
     public string? AbortReason { get; set; }
 
     public int IgnoredCount { get; set; }
+
+    /// <summary>사용자가 숨겨서 보고서 본문에서 뺀 항목 (보고서 끝에 목록과 되돌리는 방법을 보여줘요).</summary>
+    public List<Finding> IgnoredFindings { get; } = [];
 }
 
 public static class ScanEngine

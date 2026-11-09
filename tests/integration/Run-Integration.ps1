@@ -145,7 +145,8 @@ try {
     }
     Check ($disagree -eq 0) "unsigned verdicts agree with Get-AuthenticodeSignature ($($sysUnsigned.Count) checked)"
     Write-Host "  baseline findings on runner: $(@($rep0.findings).Count)"
-    $dupes = @($rep0.findings | Group-Object { $_.location.ToLowerInvariant() } | Where-Object Count -gt 1)
+    # hosts 항목은 위치가 모두 hosts 파일이라(줄 번호는 ID에 넣지 않아요) 위치와 대상(IP 주소)을 같이 봐요.
+    $dupes = @($rep0.findings | Group-Object { if ($_.category -eq 'Hosts') { "$($_.location)|$($_.target)".ToLowerInvariant() } else { $_.location.ToLowerInvariant() } } | Where-Object Count -gt 1)
     Check ($dupes.Count -eq 0) 'no duplicate findings'
     $tempMis = @($rep0.findings | Where-Object { $_.category -eq 'DroppedFile' -and $_.location -like '*\AppData\Local\Temp\*' -and $_.severity -eq 'Medium' -and $_.location -notmatch '\.(pdf|jpg|png|txt|docx?)' })
     Check ($tempMis.Count -eq 0) "Temp files classified as Temp, not user profile (found $($tempMis.Count))"
@@ -221,11 +222,41 @@ try {
     Check ($com2.Count -ge 1 -and $com2[0].isNew -eq $false) 'baseline remembers COM finding'
 
     Write-Host "== 5. ignore"
+    # 기록에 없는 ID(오타)는 저장하지 않고 거절해야 해요.
+    $bogus = Invoke-SS @('ignore', '0123456789abcdef', '--data-dir', $data)
+    $stBogus = Get-Content (Join-Path $data 'state.json') -Raw -Encoding utf8 | ConvertFrom-Json
+    Check ($bogus.Code -eq 1 -and @($stBogus.ignored) -notcontains '0123456789abcdef') "ignore refuses an ID that is not in the records (exit $($bogus.Code))"
     $ig = Invoke-SS @('ignore', $com2[0].id, '--data-dir', $data)
     Check ($ig.Code -eq 0) 'ignore exits 0'
+    Check ("$($ig.Text)".Contains($com2[0].title)) 'ignore shows the title of the item it hides'
     $null = Scan
     $rep3 = Latest-Report
     Check (@($rep3.findings | Where-Object { $_.id -eq $com2[0].id }).Count -eq 0 -and $rep3.ignoredCount -ge 1) 'ignored finding hidden'
+    Check (@($rep3.ignored | Where-Object { $_.id -eq $com2[0].id }).Count -eq 1) 'report lists the hidden item'
+    $il = Invoke-SS @('ignored', '--data-dir', $data)
+    Check ($il.Code -eq 0 -and "$($il.Text)".Contains($com2[0].id)) 'ignored command lists the hidden item'
+    $ub = Invoke-SS @('unignore', '0123456789abcdef', '--data-dir', $data)
+    Check ($ub.Code -eq 1) "unignore refuses an ID that is not hidden (exit $($ub.Code))"
+
+    Write-Host "== 5b. a swapped file at the same place is shown again"
+    # 같은 경로의 DLL을 다른 내용으로 바꾸고 시각을 되돌려요(timestomp). ID는 같지만 SHA-256이 달라서 숨김이 풀려야 해요.
+    $oldDll = Get-Item $evilDll
+    $created = $oldDll.CreationTimeUtc
+    $written = $oldDll.LastWriteTimeUtc
+    $swap = [byte[]]$bytes.Clone()
+    $swap[0x200] = 0x42
+    [IO.File]::WriteAllBytes($evilDll, $swap)
+    (Get-Item $evilDll).CreationTimeUtc = $created
+    (Get-Item $evilDll).LastWriteTimeUtc = $written
+    $null = Scan
+    $rep4 = Latest-Report
+    $back = @($rep4.findings | Where-Object { $_.id -eq $com2[0].id })
+    Check ($back.Count -eq 1 -and $null -ne $back[0].ignoreNote -and $back[0].isNew -eq $true) "hidden COM finding is shown again after its DLL was swapped (found $($back.Count))"
+    $re = Invoke-SS @('ignore', $com2[0].id.Substring(0, 10), '--data-dir', $data)
+    Check ($re.Code -eq 0) 'ignore accepts a unique ID prefix and hides the changed item again'
+    $null = Scan
+    $rep5 = Latest-Report
+    Check (@($rep5.findings | Where-Object { $_.id -eq $com2[0].id }).Count -eq 0) 'item hidden again with its new state'
 
     Write-Host "== 6. game deferral and retry"
     $cfg = @{ gameProcesses = @('pwsh.exe', 'powershell.exe'); notifyMinSeverity = 'Medium'; cpuBusyPercent = 0; deferOnFullscreen = $false } | ConvertTo-Json
@@ -261,8 +292,22 @@ try {
     $aid = 'feedc0de12345678'
     $ia = Invoke-SS @('ignore', $aid, '--scope', 'admin', '--data-dir', $data)
     $adminState = Get-Content (Join-Path $data 'state.admin.json') -Raw -Encoding utf8 | ConvertFrom-Json
-    Check ($ia.Code -eq 0 -and @($adminState.ignored) -contains $aid) 'ignore --scope admin with --data-dir writes that folder directly'
-    $null = Invoke-SS @('unignore', $aid, '--scope', 'admin', '--data-dir', $data)
+    Check ($ia.Code -eq 1 -and @($adminState.ignored) -notcontains $aid) "ignore --scope admin refuses an ID that is not in the admin records (exit $($ia.Code))"
+    $userIds = @((Get-Content (Join-Path $data 'state.json') -Raw -Encoding utf8 | ConvertFrom-Json).baseline.PSObject.Properties | ForEach-Object Name)
+    $adminOnly = @($repa.findings | Where-Object { $userIds -notcontains $_.id } | Select-Object -First 1)
+    if ($adminOnly.Count -eq 1) {
+        $aid2 = $adminOnly[0].id
+        # --scope 없이 적어도 관리자 검사 기록에서 찾아서, --data-dir 폴더의 관리자 기록에 바로 써요.
+        $ia2 = Invoke-SS @('ignore', $aid2, '--data-dir', $data)
+        $adminState2 = Get-Content (Join-Path $data 'state.admin.json') -Raw -Encoding utf8 | ConvertFrom-Json
+        Check ($ia2.Code -eq 0 -and @($adminState2.ignored) -contains $aid2) 'ignore finds an admin-only item without --scope and writes the admin records'
+        $ua = Invoke-SS @('unignore', $aid2, '--data-dir', $data)
+        $adminState3 = Get-Content (Join-Path $data 'state.admin.json') -Raw -Encoding utf8 | ConvertFrom-Json
+        Check ($ua.Code -eq 0 -and @($adminState3.ignored) -notcontains $aid2) 'unignore removes the admin item again'
+    }
+    else {
+        Write-Host '  (info) the admin scan reported nothing that only the admin scope has; admin ignore round trip skipped' -ForegroundColor Yellow
+    }
 
     Write-Host "== 8b. default data folder of an elevated process"
     # 관리자 권한 프로세스는 사용자 폴더(%LOCALAPPDATA%)가 아니라 관리자만 쓸 수 있는 폴더를 써요 (status는 아무것도 만들지 않아요).

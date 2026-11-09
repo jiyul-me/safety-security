@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security;
+using SafetySecurity.Core.Baseline;
 using SafetySecurity.Core.Model;
 using Windows.Data.Xml.Dom;
 using Windows.UI.Notifications;
@@ -25,7 +26,8 @@ internal static class ToastNotifier
             var title = high > 0
                 ? $"위험도 높은 항목 {high}개를 찾았어요"
                 : $"새로 확인할 항목 {findings.Count}개가 있어요";
-            var detail = string.Join(", ", findings.Take(2).Select(f => f.Title));
+            // 지난 검사에도 있던 항목이 더 위험해졌거나 파일이 바뀐 것이면 제목 뒤에 "(달라짐)"을 붙여요.
+            var detail = string.Join(", ", findings.Take(2).Select(BaselineEvaluator.NoticeTitle));
             if (findings.Count > 2)
             {
                 detail += $" 외 {findings.Count - 2}개";

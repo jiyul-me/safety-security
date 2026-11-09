@@ -1,4 +1,5 @@
 using System.Reflection;
+using SafetySecurity.Core.Baseline;
 using SafetySecurity.Core.Install;
 using SafetySecurity.Core.Model;
 using SafetySecurity.Core.Rules;
@@ -30,9 +31,10 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
       --report-dir <폴더>  보고서 저장 위치
   SafetySecurity.exe status               마지막 검사, 미뤄둔 검사, 등록된 작업
   SafetySecurity.exe report               마지막 보고서 열기
-  SafetySecurity.exe ignore <ID>          항목을 무시 목록에 추가 (보고서에 ID가 있어요)
-      --scope admin        관리자 검사의 무시 목록 (관리자 권한을 요청해요)
-  SafetySecurity.exe unignore <ID>        무시 목록에서 빼기
+  SafetySecurity.exe ignore <ID>          보고서의 항목 숨기기 (ID는 보고서에 있어요. 앞 8자리 이상만 적어도 돼요)
+      --scope admin        관리자 검사 항목 (적지 않으면 두 검사 기록에서 찾아요. 관리자 권한을 요청해요)
+  SafetySecurity.exe unignore <ID>        숨긴 항목을 다시 보이게 하기
+  SafetySecurity.exe ignored              숨긴 항목 목록 (ID, 제목, 숨긴 날)
   SafetySecurity.exe verify <파일>        파일 하나의 디지털 서명 확인
   SafetySecurity.exe test-notify          알림이 뜨는지 시험
   SafetySecurity.exe version
@@ -130,28 +132,19 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
                 case "ignore":
                 case "unignore":
                 {
-                    var scope = TakeValue(list, "--scope") == "admin" ? ScanScope.Admin : ScanScope.User;
-                    var id = list.FirstOrDefault(a => !a.StartsWith('-'));
-                    if (id is null)
+                    var code = ChangeIgnore(command, list, dataDir, store, output, out var showResult);
+                    if (showResult)
                     {
-                        output.Line("ID를 적어 주세요. 예: SafetySecurity.exe ignore 1a2b3c4d5e6f7a8b");
-                        return 1;
-                    }
-
-                    if (scope == ScanScope.Admin && DataRoots.NeedsElevationToChangeAdminState(dataDir, Environment.IsPrivilegedProcess))
-                    {
-                        var code = ChangeAdminIgnore(command, id, output);
                         output.ShowIfNoConsole("SafetySecurity");
-                        return code;
                     }
 
-                    var state = store.LoadState(scope);
-                    var changed = command == "ignore" ? state.Ignored.Add(id.ToLowerInvariant()) : state.Ignored.Remove(id.ToLowerInvariant());
-                    store.SaveState(scope, state);
-                    output.Line(changed ? (command == "ignore" ? $"{id}: 다음 검사부터 숨겨요." : $"{id}: 다시 보여요.") : "이미 그 상태예요.");
-                    output.ShowIfNoConsole("SafetySecurity");
-                    return 0;
+                    return code;
                 }
+
+                case "ignored":
+                    ListIgnored(store, output);
+                    output.ShowIfNoConsole("SafetySecurity 숨긴 항목");
+                    return 0;
 
                 case "verify":
                 {
@@ -257,10 +250,216 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
         return v;
     }
 
+    /// <summary>관리자 검사 기록이 있는 저장소 (status와 같은 규칙: 일반 권한에서도 읽기만 해요).</summary>
+    private static DataStore AdminStore(DataStore store) =>
+        store.IsExplicit || store.IsAdminRoot ? store : new DataStore(DataStore.AdminRoot);
+
+    /// <summary>ignore·unignore가 찾은 항목.</summary>
+    private sealed record IgnoreTarget(ScanScope Scope, string Id, string? Title, Severity? Severity, string? Category);
+
+    /// <summary>
+    /// 숨기기·되돌리기. 적은 ID가 정말 최근 검사 기록이나 보고서에 있는 항목인지 먼저 확인하고(오타를 조용히 저장하지 않아요),
+    /// 어떤 항목인지 제목을 보여줘요. --scope를 적지 않으면 사용자 검사 기록, 그다음 관리자 검사 기록에서 찾아요.
+    /// </summary>
+    private static int ChangeIgnore(string command, List<string> list, string? dataDir, DataStore store, Output output, out bool showResult)
+    {
+        showResult = true;
+        var scopeArg = TakeValue(list, "--scope")?.ToLowerInvariant();
+        var input = list.FirstOrDefault(a => !a.StartsWith('-'));
+        if (input is null)
+        {
+            output.Line($"ID를 적어 주세요. 예: SafetySecurity.exe {command} 1a2b3c4d5e6f7a8b");
+            return 1;
+        }
+
+        var adminStore = AdminStore(store);
+        ScanScope[] scopes = scopeArg switch
+        {
+            "admin" => [ScanScope.Admin],
+            "user" => [ScanScope.User],
+            _ => [ScanScope.User, ScanScope.Admin],
+        };
+
+        IgnoreTarget? target = null;
+        var match = IdMatch.NotFound;
+        foreach (var scope in scopes)
+        {
+            var s = scope == ScanScope.Admin ? adminStore : store;
+            match = command == "ignore" ? FindToIgnore(input, scope, s, out target) : FindToUnignore(input, scope, s, out target);
+            if (match != IdMatch.NotFound)
+            {
+                break;
+            }
+        }
+
+        switch (match)
+        {
+            case IdMatch.Invalid:
+                output.Line($"'{input}'은(는) ID 형식이 아니에요. 보고서에 적힌 16자리 ID(예: 1a2b3c4d5e6f7a8b)를 그대로 적어 주세요. 앞 {IgnoreList.MinPrefix}자리 이상만 적어도 돼요.");
+                return 1;
+            case IdMatch.Ambiguous:
+                output.Line($"'{input}'(으)로 시작하는 항목이 여러 개예요. 보고서의 ID를 16자리 모두 적어 주세요. 아무것도 바꾸지 않았어요.");
+                return 1;
+            case IdMatch.NotFound:
+                output.Line(command == "ignore"
+                    ? $"'{input}': 최근 검사 기록과 보고서에서 이 ID를 찾지 못해서 아무것도 바꾸지 않았어요. 보고서에 적힌 ID를 그대로 적었는지 확인해 주세요."
+                    : $"'{input}': 숨긴 항목 목록에 없어요. 숨긴 항목은 'SafetySecurity.exe ignored'로 볼 수 있어요.");
+                return 1;
+        }
+
+        var t = target!;
+        var label = Label(t);
+        if (command == "ignore" && !output.Confirm(
+                $"이 항목을 숨길까요?\n\n{label}\nID: {t.Id}\n\n숨겨도 파일·설정은 그대로예요 (SafetySecurity는 아무것도 지우거나 고치지 않아요). 보고서와 알림에서만 빠지고, 숨긴 뒤로 더 위험해지거나 같은 위치의 파일이 바뀌면 다시 보여줘요.",
+                "SafetySecurity 항목 숨기기"))
+        {
+            store.Log($"ignore {t.Id}: 사용자가 취소했어요");
+            showResult = false;
+            return 1;
+        }
+
+        if (t.Scope == ScanScope.Admin && DataRoots.NeedsElevationToChangeAdminState(dataDir, Environment.IsPrivilegedProcess))
+        {
+            return ChangeAdminIgnore(command, t.Id, label, output);
+        }
+
+        var target2 = t.Scope == ScanScope.Admin ? adminStore : store;
+        using (StateLock.Acquire(target2.StatePath(t.Scope), target2.Log))
+        {
+            // 검사가 저장하는 순간과 겹치지 않게, 잠금 안에서 최신 기록을 다시 읽고 바로 써요.
+            if (target2.TryLoadState(t.Scope, out var state) == StateRead.Unreadable)
+            {
+                output.Line("검사 기록 파일을 지금 읽을 수 없어서 아무것도 바꾸지 않았어요. 잠시 뒤에 다시 해 주세요.");
+                return 1;
+            }
+
+            var wasIgnored = state.Ignored.Contains(t.Id);
+            var changed = command == "ignore"
+                ? IgnoreList.Add(state, t.Id, t.Title, t.Category, DateTimeOffset.UtcNow)
+                : IgnoreList.Remove(state, t.Id);
+            if (changed)
+            {
+                target2.SaveState(t.Scope, state);
+            }
+
+            var where = t.Scope == ScanScope.Admin ? "관리자 검사" : "검사";
+            var undo = $"SafetySecurity.exe unignore {t.Id}{(t.Scope == ScanScope.Admin ? " --scope admin" : string.Empty)}";
+            output.Line(command switch
+            {
+                "ignore" when !changed => $"이미 숨긴 항목이에요: {label}",
+                "ignore" when wasIgnored => $"다시 숨겼어요: {label}\n지금 상태를 새 기준으로 다음 {where}부터 숨겨요. 되돌리려면: {undo}",
+                "ignore" => $"숨겼어요: {label}\n다음 {where}부터 보고서와 알림에서 빠져요. 숨긴 뒤로 더 위험해지거나 파일이 바뀌면 다시 보여줘요. 되돌리려면: {undo}",
+                _ => $"다시 보여요: {label}\n다음 {where}부터 보고서에 나와요.",
+            });
+            return 0;
+        }
+    }
+
+    private static string Label(IgnoreTarget t)
+    {
+        var sev = t.Severity is { } s ? $"[{s.ToKorean()}] " : string.Empty;
+        var cat = t.Category is { } c ? $" ({Core.Reporting.HtmlReport.CategoryKorean(c)})" : string.Empty;
+        return $"{sev}{t.Title ?? "(제목 없음)"}{cat}";
+    }
+
+    /// <summary>숨길 항목을 이 범위의 검사 기록에서 찾고, 없으면 최근 보고서에서 찾아요.</summary>
+    private static IdMatch FindToIgnore(string input, ScanScope scope, DataStore s, out IgnoreTarget? target)
+    {
+        target = null;
+        var state = s.LoadState(scope);
+        var match = IgnoreList.Resolve(input, state.Baseline.Keys.Concat(state.Ignored), out var id);
+        if (match == IdMatch.Found)
+        {
+            state.BaselineDetail.TryGetValue(id!, out var seen);
+            state.IgnoredDetail.TryGetValue(id!, out var hidden);
+            var title = seen?.Title ?? hidden?.Title;
+            var severity = seen?.Severity ?? hidden?.Severity;
+            var category = state.Baseline.TryGetValue(id!, out var c) ? c : hidden?.Category;
+            if (title is null && s.RecentReports(scope, state.LastReportPath).SelectMany(d => d.Findings).FirstOrDefault(f => f.Id == id) is { } rf)
+            {
+                // 예전 버전이 쓴 기록에는 제목이 없어서 보고서에서 가져와요.
+                title = rf.Title;
+                severity ??= rf.Severity;
+            }
+
+            target = new IgnoreTarget(scope, id!, title, severity, category);
+            return match;
+        }
+
+        if (match != IdMatch.NotFound)
+        {
+            return match;
+        }
+
+        // 지금은 없어진 항목도 예전 보고서에 있었다면 숨길 수 있어요 (다시 생겨도 보이지 않게).
+        foreach (var doc in s.RecentReports(scope, state.LastReportPath))
+        {
+            var m = IgnoreList.Resolve(input, doc.Findings.Select(f => f.Id), out var rid);
+            if (m == IdMatch.Found)
+            {
+                var f = doc.Findings.First(x => x.Id == rid);
+                target = new IgnoreTarget(scope, rid!, f.Title, f.Severity, f.Category);
+                return m;
+            }
+
+            if (m != IdMatch.NotFound)
+            {
+                return m;
+            }
+        }
+
+        return IdMatch.NotFound;
+    }
+
+    /// <summary>되돌릴 항목을 이 범위의 숨김 목록에서 찾아요.</summary>
+    private static IdMatch FindToUnignore(string input, ScanScope scope, DataStore s, out IgnoreTarget? target)
+    {
+        target = null;
+        var state = s.LoadState(scope);
+        var match = IgnoreList.Resolve(input, state.Ignored, out var id);
+        if (match == IdMatch.Found)
+        {
+            state.IgnoredDetail.TryGetValue(id!, out var hidden);
+            state.BaselineDetail.TryGetValue(id!, out var seen);
+            target = new IgnoreTarget(scope, id!, hidden?.Title ?? seen?.Title, hidden?.Severity ?? seen?.Severity, hidden?.Category);
+        }
+
+        return match;
+    }
+
+    /// <summary>숨긴 항목 목록. 일반 권한에서도 관리자 검사 기록을 읽기만 해서 보여줘요.</summary>
+    private static void ListIgnored(DataStore store, Output output)
+    {
+        var adminStore = AdminStore(store);
+        var any = false;
+        foreach (var scope in new[] { ScanScope.User, ScanScope.Admin })
+        {
+            var s = (scope == ScanScope.Admin ? adminStore : store).LoadState(scope);
+            if (s.Ignored.Count == 0)
+            {
+                continue;
+            }
+
+            any = true;
+            output.Line($"[{(scope == ScanScope.Admin ? "관리자" : "사용자")} 검사에서 숨긴 항목 {s.Ignored.Count}개]");
+            foreach (var id in s.Ignored.OrderByDescending(i => s.IgnoredDetail.GetValueOrDefault(i)?.IgnoredUtc ?? DateTimeOffset.MinValue).ThenBy(i => i, StringComparer.Ordinal))
+            {
+                output.Line("  " + IgnoreList.Describe(id, s.IgnoredDetail.GetValueOrDefault(id)));
+            }
+
+            output.Line($"  다시 보이게 하려면: SafetySecurity.exe unignore <ID>{(scope == ScanScope.Admin ? " --scope admin" : string.Empty)}");
+        }
+
+        if (!any)
+        {
+            output.Line("숨긴 항목이 없어요. 보고서의 항목을 숨기려면: SafetySecurity.exe ignore <ID>");
+        }
+    }
+
     /// <summary>
     /// 관리자 검사의 무시 목록은 관리자만 쓸 수 있는 폴더에 있어서, 관리자 권한으로 다시 실행해서 바꿔요 (install --admin과 같은 방식).
     /// </summary>
-    private static int ChangeAdminIgnore(string command, string id, Output output)
+    private static int ChangeAdminIgnore(string command, string id, string label, Output output)
     {
         if (!TaskInstaller.AdminInstallExists())
         {
@@ -269,7 +468,7 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
         }
 
         // 다시 실행할 때 넘기는 인자는 우리가 만든 값만 써요. ID는 보고서의 16진수 ID 형식만 받아요.
-        if (id.Length > 64 || !id.All(char.IsAsciiLetterOrDigit))
+        if (IgnoreList.Normalize(id) != id)
         {
             output.Line("ID 형식이 아니에요. 보고서에 적힌 ID(예: 1a2b3c4d5e6f7a8b)를 그대로 적어 주세요.");
             return 1;
@@ -278,7 +477,7 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
         output.Line("관리자 검사의 무시 목록은 관리자 권한으로만 바꿀 수 있어요. UAC 창에서 '예'를 눌러 주세요.");
         var code = TaskInstaller.Relaunch($"{command} {id.ToLowerInvariant()} --scope admin --quiet");
         output.Line(code == 0
-            ? (command == "ignore" ? $"{id}: 다음 관리자 검사부터 숨겨요." : $"{id}: 관리자 검사에서 다시 보여요.")
+            ? (command == "ignore" ? $"숨겼어요: {label}\n다음 관리자 검사부터 숨겨요. 되돌리려면: SafetySecurity.exe unignore {id} --scope admin" : $"다시 보여요: {label}\n관리자 검사에서 다시 보여요.")
             : "바꾸지 못했어요 (권한 요청을 취소했거나 오류가 났어요).");
         return code == 0 ? 0 : 1;
     }
@@ -311,7 +510,7 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
                 output.Line($"  미뤄둔 검사: {p.Reason}{(p.Quick ? " (빠른 검사)" : string.Empty)} — {p.DeferredBecause} ({p.Attempts}번 미룸)");
             }
 
-            output.Line($"  무시 목록: {s.Ignored.Count}개, 베이스라인: {s.Baseline.Count}개");
+            output.Line($"  숨긴 항목: {s.Ignored.Count}개 (목록: ignored), 베이스라인: {s.Baseline.Count}개");
             if (s.LastReportPath is not null)
             {
                 output.Line("  마지막 보고서: " + s.LastReportPath);

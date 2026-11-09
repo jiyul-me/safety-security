@@ -51,34 +51,41 @@ internal static class ScanCommand
 
     public static int Run(ScanOptions o, DataStore store, Output output)
     {
-        var config = store.LoadConfig();
-        var state = store.LoadState(o.Scope);
         var now = DateTimeOffset.UtcNow;
+        var retry = o.Reason == ScanReason.Retry;
 
         // Retry: 미뤄둔 검사가 있을 때만 (또는 하루 넘게 검사를 못 했을 때만) 검사하고, 아니면 바로 끝내요.
-        if (o.Reason == ScanReason.Retry)
+        // 30분마다 도는 작업이라 잠금을 잡기 전에 먼저 가볍게 확인해요.
+        if (retry && !ResolveRetry(o, store.LoadState(o.Scope), now))
         {
-            if (state.Pending is { } pending)
-            {
-                o.Reason = pending.Reason;
-                o.Quick = pending.Quick;
-            }
-            else if (state.LastFullScanUtc is null || now - state.LastFullScanUtc > (o.Scope == ScanScope.Admin ? AdminInterval : UserSafetyNet))
-            {
-                o.Reason = ScanReason.Daily;
-                o.Quick = false;
-            }
-            else
-            {
-                return ExitCodes.NothingToDo;
-            }
+            return ExitCodes.NothingToDo;
         }
 
         using var scanLock = ScanLock.TryAcquire(o.Scope.ToString());
         if (scanLock is null)
         {
+            if (retry)
+            {
+                // 다른 검사가 지금 하고 있으니 Retry가 할 일은 없어요 (작업 스케줄러에 실패로 남기지 않아요).
+                store.Log($"{o.Scope}/retry: 다른 검사가 실행 중이라 넘어가요");
+                return ExitCodes.NothingToDo;
+            }
+
             output.Line("다른 검사가 이미 실행 중이에요. 잠시 뒤에 다시 해 주세요.");
             return ExitCodes.AlreadyRunning;
+        }
+
+        // 잠금을 잡은 뒤에 기록을 읽어요. 그래야 방금 끝난 다른 검사가 저장한 베이스라인을 놓치지 않아서,
+        // 같은 항목을 '새 항목'으로 다시 알리지 않아요.
+        var config = store.LoadConfig();
+        var state = store.LoadState(o.Scope);
+        if (retry)
+        {
+            o.Reason = ScanReason.Retry;
+            if (!ResolveRetry(o, state, now))
+            {
+                return ExitCodes.NothingToDo;
+            }
         }
 
         if (o.Scope == ScanScope.Admin && !Environment.IsPrivilegedProcess)
@@ -92,7 +99,7 @@ internal static class ScanCommand
         if (!o.Force && detector.Check(includeCpu: true) is { } busy)
         {
             Defer(state, o, busy, now);
-            store.SaveState(o.Scope, state);
+            SaveState(store, o.Scope, state, []);
             store.Log($"{o.Scope}/{o.Reason}: 미룸 — {busy}");
             output.Line($"지금은 {busy}이라 검사를 미뤘어요. 30분마다 다시 확인해요.");
             return ExitCodes.Deferred;
@@ -149,7 +156,7 @@ internal static class ScanCommand
         if (result.Aborted)
         {
             Defer(state, o, result.AbortReason ?? "중단됨", now);
-            store.SaveState(o.Scope, state);
+            SaveState(store, o.Scope, state, []);
             store.Log($"{o.Scope}/{o.Reason}: 중단 — {result.AbortReason} ({sw.Elapsed.TotalSeconds:0.0}s)");
             output.Line($"검사 중에 {result.AbortReason}(이)라 멈췄어요. 나중에 다시 검사해요.");
             return ExitCodes.Aborted;
@@ -174,7 +181,7 @@ internal static class ScanCommand
         // 설정 파일이 없으면 기본값으로 만들어 둬요 (직접 고칠 수 있게). 관리자 설치는 사용자 폴더에 미리 만들지 않아서,
         // 사용자 검사가 처음 끝날 때 만들어져요. 관리자 검사는 보호된 관리자 폴더의 설정만 써요.
         store.WriteDefaultConfigIfMissing();
-        store.SaveState(o.Scope, state);
+        SaveState(store, o.Scope, state, decision.IgnoreEdits);
 
         var high = result.Findings.Count(f => f.Severity == Severity.High);
         var medium = result.Findings.Count(f => f.Severity == Severity.Medium);
@@ -214,6 +221,47 @@ internal static class ScanCommand
         }
 
         return ExitCodes.Ok;
+    }
+
+    /// <summary>Retry를 실제 검사 종류로 바꿔요. 할 일이 없으면 false.</summary>
+    private static bool ResolveRetry(ScanOptions o, ScanState state, DateTimeOffset now)
+    {
+        if (state.Pending is { } pending)
+        {
+            o.Reason = pending.Reason;
+            o.Quick = pending.Quick;
+            return true;
+        }
+
+        if (state.LastFullScanUtc is null || now - state.LastFullScanUtc > (o.Scope == ScanScope.Admin ? AdminInterval : UserSafetyNet))
+        {
+            o.Reason = ScanReason.Daily;
+            o.Quick = false;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 검사 기록을 저장해요. 숨김 목록은 사용자가 ignore·unignore로 바꾸는 것이라, 짧은 기록 잠금 안에서 디스크의 최신 목록을
+    /// 다시 읽어 그대로 쓰고, 검사가 한 변경(예전 ID 옮기기, 숨길 때 상태 기록)만 그 위에 다시 적용해요.
+    /// 그래서 검사하는 동안 숨긴 항목이 검사가 끝나며 다시 나타나지 않아요.
+    /// </summary>
+    private static void SaveState(DataStore store, ScanScope scope, ScanState state, IReadOnlyList<IgnoreEdit> edits)
+    {
+        using var stateLock = StateLock.Acquire(store.StatePath(scope), store.Log);
+        var read = store.TryLoadState(scope, out var disk);
+        if (read == StateRead.Ok)
+        {
+            IgnoreList.KeepLatest(state, disk, edits);
+        }
+        else
+        {
+            store.Log($"{scope}: 저장 직전에 기록을 다시 읽지 못했어요 ({read}). 검사를 시작할 때 읽은 숨김 목록으로 저장해요.");
+        }
+
+        store.SaveState(scope, state);
     }
 
     private static void Defer(ScanState state, ScanOptions o, string because, DateTimeOffset now)
