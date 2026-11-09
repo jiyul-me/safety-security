@@ -139,6 +139,17 @@ public static class ScanSchedule
         pending is not null && now - pending.SinceUtc > OverdueAfter;
 
     /// <summary>
+    /// 지금 바쁜 이유를 하나 골라요. 게임 프로세스를 가장 먼저 봐요: 게임은 보통 전체 화면이라, 전체 화면을 먼저 보면
+    /// 게임 중인데도 '전체 화면 앱'으로 잘못 알고 <see cref="Decide"/>가 밀린 검사를 시작해 버려요 (게임 중에는 절대 검사하지 않아요).
+    /// 그다음 전체 화면, 마지막으로 CPU(재는 데 시간이 걸려요)를 봐요. 앞에서 이유를 찾으면 뒤는 부르지 않아요.
+    /// </summary>
+    /// <param name="gameProcess">게임 목록의 프로세스가 실행 중인지.</param>
+    /// <param name="fullscreen">전체 화면 앱이 맨 앞에 있는지 (안 볼 때는 null을 돌려줘요).</param>
+    /// <param name="cpu">CPU 사용률이 높은지 (안 볼 때는 null을 돌려줘요).</param>
+    public static BusyReason? FirstBusy(Func<BusyReason?> gameProcess, Func<BusyReason?> fullscreen, Func<BusyReason?> cpu) =>
+        gameProcess() ?? fullscreen() ?? cpu();
+
+    /// <summary>
     /// 바쁠 때 자동 검사를 어떻게 할지 정해요.
     /// 게임 프로세스가 실행 중이면 얼마나 밀렸든 검사하지 않아요 (하루 넘게 밀렸으면 한 번만 알려요).
     /// CPU·전체 화면 때문이면 하루 넘게 밀린 뒤에는 백그라운드로 검사하되, 6시간에 한 번까지만 시도해요.

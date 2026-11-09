@@ -345,7 +345,7 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
         }
 
         var target2 = t.Scope == ScanScope.Admin ? adminStore : store;
-        using (StateLock.Acquire(target2.StatePath(t.Scope), target2.Log))
+        using (StateLock.Acquire(target2, t.Scope))
         {
             // 검사가 저장하는 순간과 겹치지 않게, 잠금 안에서 최신 기록을 다시 읽고 바로 써요.
             if (target2.TryLoadState(t.Scope, out var state) == StateRead.Unreadable)

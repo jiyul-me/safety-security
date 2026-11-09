@@ -79,7 +79,7 @@ internal static class ScanCommand
             return ExitCodes.NothingToDo;
         }
 
-        using var scanLock = ScanLock.TryAcquire(o.Scope.ToString());
+        using var scanLock = ScanLock.TryAcquire(o.Scope, store);
         if (scanLock is null)
         {
             if (retry)
@@ -324,7 +324,7 @@ internal static class ScanCommand
     private static void RecordWhileOtherScanRuns(ScanOptions o, DataStore store)
     {
         var label = $"{o.Scope}/{o.Reason}{(o.Quick ? "/quick" : string.Empty)}";
-        using (StateLock.Acquire(store.StatePath(o.Scope), store.Log))
+        using (StateLock.Acquire(store, o.Scope))
         {
             var read = store.TryLoadState(o.Scope, out var disk);
             if (read != StateRead.Ok)
@@ -363,7 +363,7 @@ internal static class ScanCommand
     /// </summary>
     private static void SaveState(DataStore store, ScanScope scope, ScanState state, IReadOnlyList<IgnoreEdit> edits, DateTimeOffset scanStart, bool completedFull)
     {
-        using var stateLock = StateLock.Acquire(store.StatePath(scope), store.Log);
+        using var stateLock = StateLock.Acquire(store, scope);
         var read = store.TryLoadState(scope, out var disk);
         if (read == StateRead.Ok)
         {

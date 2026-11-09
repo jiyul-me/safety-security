@@ -4,6 +4,8 @@
 #pragma warning disable RS0030
 
 using System.Globalization;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using SafetySecurity.Core.Baseline;
@@ -173,6 +175,31 @@ internal sealed class DataStore
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // 오래된 보고서 정리는 실패해도 괜찮아요.
+        }
+    }
+
+    /// <summary>
+    /// 관리자 검사용 잠금 파일(데이터 폴더 안의 <paramref name="name"/>)을 혼자만 쓰게(공유 없이) 열어요. 다른 프로세스가 열고 있으면 null.
+    /// 이름 있는 뮤텍스(Local\…)는 같은 세션의 일반 권한 프로그램도 먼저 만들어 잡아 둘 수 있어서, 악성코드가 관리자 검사를 계속 막을 수
+    /// 있어요. 이 파일은 관리자만 쓸 수 있는 데이터 폴더 안에, 관리자·SYSTEM만 열 수 있는 권한(물려받지 않음)으로 만들어서
+    /// 일반 권한 프로그램은 열어 둘(가로챌) 수 없어요. 프로세스가 끝나면 Windows가 핸들을 닫아서 잠금도 저절로 풀려요.
+    /// 권한은 파일을 새로 만들 때만 정해져요 (이미 있으면 우리가 예전에 같은 권한으로 만든 파일이에요).
+    /// </summary>
+    public FileStream? TryOpenAdminLock(string name)
+    {
+        Directory.CreateDirectory(Root);
+        var security = new FileSecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, AccessControlType.Allow));
+        security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, AccessControlType.Allow));
+        try
+        {
+            return new FileInfo(Path.Combine(Root, name)).Create(FileMode.OpenOrCreate, FileSystemRights.Read | FileSystemRights.Write, FileShare.None, 1, FileOptions.None, security);
+        }
+        catch (IOException ex) when ((ex.HResult & 0xFFFF) is 32 or 33)
+        {
+            // ERROR_SHARING_VIOLATION·ERROR_LOCK_VIOLATION: 다른 관리자 검사·명령이 잡고 있어요.
+            return null;
         }
     }
 

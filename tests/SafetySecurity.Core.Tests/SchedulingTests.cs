@@ -201,6 +201,41 @@ public class SchedulingTests
     }
 
     [Fact]
+    public void FullscreenGameThatIsAlsoListedIsTreatedAsGame_NeverRunOverdue()
+    {
+        // 게임 목록의 게임이 전체 화면으로 실행 중이면(보통 이래요) 게임으로 봐야 해요. 전체 화면으로 보면 밀린 검사가 게임 중에 시작돼요.
+        var game = new BusyReason(BusyKind.GameProcess, "게임 프로세스 실행 중 (cs2.exe)");
+        var fullscreen = new BusyReason(BusyKind.Fullscreen, "전체 화면 게임(D3D)이 실행 중");
+        var cpuCalled = false;
+        var busy = ScanSchedule.FirstBusy(() => game, () => fullscreen, () =>
+        {
+            cpuCalled = true;
+            return new BusyReason(BusyKind.Cpu, "CPU");
+        });
+
+        Assert.Same(game, busy);
+        Assert.False(cpuCalled);
+
+        var pending = Pending(TimeSpan.FromDays(2));
+        Assert.Equal(DeferAction.DeferAndWarn, ScanSchedule.Decide(busy, pending, Now));
+        pending.OverdueNoticeUtc = Now.AddHours(-1);
+        Assert.Equal(DeferAction.Defer, ScanSchedule.Decide(busy, pending, Now));
+    }
+
+    [Fact]
+    public void FullscreenWithoutListedGameStillRunsOverdue()
+    {
+        // 게임 목록에 없는 전체 화면 앱(영상 등)만 있으면, 하루 넘게 밀린 검사는 예전처럼 백그라운드로 해요.
+        var fullscreen = new BusyReason(BusyKind.Fullscreen, "전체 화면 앱이 실행 중");
+        var busy = ScanSchedule.FirstBusy(() => null, () => fullscreen, () => new BusyReason(BusyKind.Cpu, "CPU"));
+        Assert.Same(fullscreen, busy);
+        Assert.Equal(DeferAction.RunOverdue, ScanSchedule.Decide(busy, Pending(TimeSpan.FromDays(2)), Now));
+
+        Assert.Equal(BusyKind.Cpu, ScanSchedule.FirstBusy(() => null, () => null, () => new BusyReason(BusyKind.Cpu, "CPU"))?.Kind);
+        Assert.Null(ScanSchedule.FirstBusy(() => null, () => null, () => null));
+    }
+
+    [Fact]
     public void FutureStartIsNotOverdue()
     {
         var pending = Pending(TimeSpan.FromHours(-30));

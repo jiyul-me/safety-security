@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using SafetySecurity.Core.Abstractions;
+using SafetySecurity.Core.Model;
 using static SafetySecurity.Native.NativeMethods;
 
 namespace SafetySecurity.Runtime;
@@ -72,15 +73,24 @@ internal sealed class Pacer(GameDetector? detector, TimeSpan budget, bool gamesO
     }
 }
 
-/// <summary>같은 범위의 검사가 동시에 두 번 돌지 않게 해요.</summary>
+/// <summary>
+/// 같은 범위의 검사가 동시에 두 번 돌지 않게 해요.
+/// 사용자 검사는 세션 안의 이름 있는 뮤텍스를 써요. 관리자 검사는 일반 권한 프로그램이 이름을 먼저 차지해서 막을 수 없게,
+/// 관리자 데이터 폴더 안의 잠금 파일(관리자·SYSTEM만 열 수 있어요)을 써요 (<see cref="DataStore.TryOpenAdminLock"/>).
+/// </summary>
 internal sealed class ScanLock : IDisposable
 {
-    private readonly Mutex _mutex;
+    private readonly IDisposable _held;
 
-    private ScanLock(Mutex mutex) => _mutex = mutex;
+    private ScanLock(IDisposable held) => _held = held;
 
-    public static ScanLock? TryAcquire(string scope)
+    public static ScanLock? TryAcquire(ScanScope scope, DataStore store)
     {
+        if (scope == ScanScope.Admin && Environment.IsPrivilegedProcess)
+        {
+            return store.TryOpenAdminLock("scan.admin.lock") is { } file ? new ScanLock(file) : null;
+        }
+
         var mutex = new Mutex(false, @"Local\SafetySecurity.Scan." + scope);
         try
         {
@@ -97,7 +107,7 @@ internal sealed class ScanLock : IDisposable
 
             if (acquired)
             {
-                return new ScanLock(mutex);
+                return new ScanLock(new OwnedMutex(mutex));
             }
         }
         catch
@@ -110,10 +120,16 @@ internal sealed class ScanLock : IDisposable
         return null;
     }
 
+    public void Dispose() => _held.Dispose();
+}
+
+/// <summary>잡은 뮤텍스를 놓고 닫아요.</summary>
+internal sealed class OwnedMutex(Mutex mutex) : IDisposable
+{
     public void Dispose()
     {
-        _mutex.ReleaseMutex();
-        _mutex.Dispose();
+        mutex.ReleaseMutex();
+        mutex.Dispose();
     }
 }
 
@@ -126,13 +142,23 @@ internal sealed class ScanLock : IDisposable
 internal sealed class StateLock : IDisposable
 {
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
-    private readonly Mutex? _mutex;
+    private readonly IDisposable? _held;
 
-    private StateLock(Mutex? mutex) => _mutex = mutex;
+    private StateLock(IDisposable? held) => _held = held;
 
-    /// <summary>잠금을 잡아요. 10초 안에 못 잡거나 잠금을 열 수 없으면 기록만 남기고 잠금 없이 계속해요.</summary>
-    public static StateLock Acquire(string statePath, Action<string> log)
+    /// <summary>
+    /// 잠금을 잡아요. 10초 안에 못 잡거나 잠금을 열 수 없으면 기록만 남기고 잠금 없이 계속해요.
+    /// 관리자 권한으로 관리자 기록을 쓸 때는 일반 권한 프로그램이 가로챌 수 없는 잠금 파일을 써요 (<see cref="ScanLock"/>와 같아요).
+    /// </summary>
+    public static StateLock Acquire(DataStore store, ScanScope scope)
     {
+        var statePath = store.StatePath(scope);
+        Action<string> log = store.Log;
+        if (scope == ScanScope.Admin && Environment.IsPrivilegedProcess)
+        {
+            return AcquireFile(store, log);
+        }
+
         // 파일 경로마다 다른 이름: 사용자 폴더와 관리자 폴더의 기록은 서로 다른 잠금을 써요.
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(statePath).ToLowerInvariant()));
         var name = @"Local\SafetySecurity.State." + Convert.ToHexStringLower(hash.AsSpan(0, 8));
@@ -162,7 +188,7 @@ internal sealed class StateLock : IDisposable
 
             if (acquired)
             {
-                return new StateLock(mutex);
+                return new StateLock(new OwnedMutex(mutex));
             }
         }
         catch
@@ -176,12 +202,35 @@ internal sealed class StateLock : IDisposable
         return new StateLock(null);
     }
 
-    public void Dispose()
+    public void Dispose() => _held?.Dispose();
+
+    private static StateLock AcquireFile(DataStore store, Action<string> log)
     {
-        if (_mutex is not null)
+        var clock = Stopwatch.StartNew();
+        try
         {
-            _mutex.ReleaseMutex();
-            _mutex.Dispose();
+            while (true)
+            {
+                if (store.TryOpenAdminLock("state.admin.lock") is { } file)
+                {
+                    return new StateLock(file);
+                }
+
+                if (clock.Elapsed >= Wait)
+                {
+                    break;
+                }
+
+                Thread.Sleep(100);
+            }
         }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            log($"기록 잠금을 열지 못해서 잠금 없이 계속해요 ({ex.GetType().Name})");
+            return new StateLock(null);
+        }
+
+        log("기록 잠금을 10초 안에 얻지 못해서 잠금 없이 계속해요.");
+        return new StateLock(null);
     }
 }

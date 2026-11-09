@@ -417,6 +417,29 @@ try {
     $wmiNote = @($repa.coverage | Where-Object { "$_" -like 'WMI*' })
     # PowerShell을 최소 환경(물려받지 않은 환경 변수)으로 실행해도 WMI 조회가 돼야 해요.
     Check ($wmiNote.Count -eq 0) "WMI subscriptions queried with the minimal child environment $($wmiNote -join ' ')"
+    # 관리자 검사 잠금은 일반 권한 프로그램이 이름을 먼저 차지할 수 있는 Local\ 뮤텍스가 아니라, 관리자·SYSTEM만 여는 잠금 파일이에요.
+    # 예전 이름의 뮤텍스를 먼저 잡아 둬도 관리자 검사는 막히지 않아야 해요.
+    $squat = [System.Threading.Mutex]::new($true, 'Local\SafetySecurity.Scan.Admin')
+    try {
+        $sq = Invoke-SS @('scan', '--scope', 'admin', '--quick', '--force', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+        Check ($sq.Code -eq 0) "admin scan is not blocked by a squatted Local\ mutex (exit $($sq.Code))"
+    }
+    finally { $squat.Dispose() }
+    $lockPath = Join-Path $data 'scan.admin.lock'
+    Check (Test-Path -LiteralPath $lockPath) 'admin scan lock file exists in the data folder'
+    if (Test-Path -LiteralPath $lockPath) {
+        $acl = Get-Acl -LiteralPath $lockPath
+        $sids = @($acl.Access | ForEach-Object { try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { "$($_.IdentityReference)" } })
+        $okSids = @('S-1-5-32-544', 'S-1-5-18')
+        Check ($acl.AreAccessRulesProtected -and @($sids | Where-Object { $okSids -notcontains $_ }).Count -eq 0) "admin lock file is only for Administrators/SYSTEM, not inherited ($($sids -join ', '))"
+        # 다른 관리자 검사가 잠금 파일을 잡고 있으면 직접 검사는 '이미 실행 중'(4)으로 끝나야 해요.
+        $held = [System.IO.File]::Open($lockPath, 'Open', 'ReadWrite', 'None')
+        try {
+            $busyA = Invoke-SS @('scan', '--scope', 'admin', '--quick', '--force', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+            Check ($busyA.Code -eq 4) "admin scan reports already running while the lock file is held (exit $($busyA.Code))"
+        }
+        finally { $held.Dispose() }
+    }
     $aq = Invoke-SS @('scan', '--scope', 'admin', '--reason', 'service', '--quick', '--force', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
     $repaq = Latest-Report
     # 관리자 설치의 예비 작업(ServiceInstalledAdmin)이 하는 검사: 서비스를 정말 검사해야 해요.
