@@ -484,6 +484,22 @@ public class ShortcutTargetTests
     }
 
     [Fact]
+    public void ParsesIdListThatStartsAtTheUserProfile()
+    {
+        var info = LnkParser.Parse(new LnkFile { IdList = ["AppData", "Local", "Temp", "ss-it-evil", "upd.exe"], UserProfileRoot = true, ShortPrimaryNames = true }.Build())!;
+        Assert.Equal(@"%USERPROFILE%\AppData\Local\Temp\ss-it-evil\upd.exe", info.IdListPath);
+    }
+
+    [Fact]
+    public void UserProfileIdListExpandsToTheRealFolder()
+    {
+        var link = LnkParser.Parse(new LnkFile { IdList = ["AppData", "Roaming", "x.exe"], UserProfileRoot = true }.Build())!;
+        var ctx = new TestEnv().Context();
+        var candidates = ShortcutTargets.Candidates(ctx, link, @"C:\Users\jiyul\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\x.lnk");
+        Assert.Equal(@"C:\Users\jiyul\AppData\Roaming\x.exe", Assert.Single(candidates));
+    }
+
+    [Fact]
     public void IdListWithShortNamesOnlyIsNotGuessed()
     {
         var info = LnkParser.Parse(new LnkFile { IdList = [@"C:\", "Program Files", "app.exe"], ShortPrimaryNames = true, ExtensionVersion = 0, LinkInfoPath = @"C:\Program Files\app.exe" }.Build())!;
@@ -772,6 +788,9 @@ internal sealed class LnkFile
     /// <summary>0이면 확장 블록(0xBEEF0004)을 넣지 않아요.</summary>
     public ushort ExtensionVersion { get; init; } = 9;
 
+    /// <summary>IDList를 '사용자 파일' 루트(%USERPROFILE%)부터 시작해요. 이때 IdList의 모든 조각이 폴더·파일 이름이에요.</summary>
+    public bool UserProfileRoot { get; init; }
+
     /// <summary>기본 이름 자리에 8.3 짧은 이름(PROGRA~1)을 넣어요.</summary>
     public bool ShortPrimaryNames { get; init; }
 
@@ -892,6 +911,18 @@ internal sealed class LnkFile
 
     private IEnumerable<byte[]> BuildIdList(string[] parts)
     {
+        if (UserProfileRoot)
+        {
+            // 사용자 파일 루트 + 그 아래 폴더·파일 항목 (Windows가 사용자 폴더 안의 대상을 이렇게 저장하기도 해요)
+            yield return [0x1F, 0x50, .. Guid.Parse("59031A47-3F72-44A7-89C5-5595FE6B30EE").ToByteArray()];
+            for (var i = 0; i < parts.Length; i++)
+            {
+                yield return FileEntry(parts[i], isFile: i == parts.Length - 1);
+            }
+
+            yield break;
+        }
+
         if (parts[0].StartsWith(@"\\", StringComparison.Ordinal))
         {
             // 네트워크 루트 + 공유 항목

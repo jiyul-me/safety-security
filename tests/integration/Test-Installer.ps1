@@ -186,7 +186,7 @@ function Assert-AdminData($L) {
     if ($adminReport) {
         $rep = Get-Content -LiteralPath $adminReport.FullName -Raw -Encoding utf8 | ConvertFrom-Json
         $own = @($rep.findings | Where-Object { $_.ruleId -eq 'TASK-002' -and "$($_.title)" -like '*\SafetySecurity*' })
-        Check ($own.Count -eq 0) "installed tasks are not reported as hidden tasks ($(@($own.title) -join ', '))"
+        Check ($own.Count -eq 0) "installed tasks are not reported as hidden tasks ($(@($own | ForEach-Object { $_.title }) -join ', '))"
     }
     foreach ($item in @($AdminData, (Join-Path $AdminData 'reports'), (Join-Path $AdminData 'state.admin.json'))) {
         if (-not (Test-Path -LiteralPath $item)) { continue }

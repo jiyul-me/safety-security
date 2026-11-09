@@ -197,7 +197,7 @@ try {
     foreach ($c in $rep.coverage) { $script:results.Add((Redact "coverage $c")) }
     # 바로가기 대상 위장(보이는 대상과 실제 실행 대상이 다름)은 실제 PC에서는 거의 없어야 해요. 있으면 오탐인지 확인해 주세요.
     $disguised = @($real | Where-Object { @($_.reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -gt 0 })
-    if ($disguised.Count -gt 0) { Note (Redact "바로가기 대상 위장으로 본 항목 $($disguised.Count)개: $(@($disguised.location) -join ', ')") }
+    if ($disguised.Count -gt 0) { Note (Redact "바로가기 대상 위장으로 본 항목 $($disguised.Count)개: $(@($disguised | ForEach-Object { $_.location }) -join ', ')") }
     # 설치된 SafetySecurity 작업(이름·실행 파일·인자가 설치가 만든 그대로인 것)을 위장 작업(TASK-003)으로 잘못 보면 안 돼요.
     # (src/SafetySecurity.Core/Install/OwnTasks.cs의 이름·인자와 같아야 해요.)
     $ownArgs = @{
@@ -213,7 +213,7 @@ try {
     if ($ownTasks.Count -gt 0) {
         $ownLocations = @($ownTasks | ForEach-Object { '작업 스케줄러' + $_.TaskPath + $_.TaskName })
         $misflagged = @($rep.findings | Where-Object { $_.ruleId -eq 'TASK-003' -and $ownLocations -contains $_.location })
-        Check ($misflagged.Count -eq 0) "설치된 SafetySecurity 작업 $($ownTasks.Count)개를 위장 작업으로 잘못 보지 않음 $(@($misflagged.location) -join ', ')"
+        Check ($misflagged.Count -eq 0) "설치된 SafetySecurity 작업 $($ownTasks.Count)개를 위장 작업으로 잘못 보지 않음 $(@($misflagged | ForEach-Object { $_.location }) -join ', ')"
     }
     $selfFindings = @($rep.findings | Where-Object { $_.ruleId -eq 'TASK-003' -or $_.ruleId -eq 'TASK-004' })
     if ($selfFindings.Count -gt 0) { Note (Redact "SafetySecurity 작업 확인: $(@($selfFindings | ForEach-Object { "$($_.ruleId) $($_.location)" }) -join ', ')") }

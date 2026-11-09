@@ -118,6 +118,25 @@ function New-Shortcut([string]$Path, [string]$Target, [string]$Arguments = '') {
     $s.Save()
 }
 
+# 진단용: 바로가기의 IDList 항목(크기, 종류, 루트 GUID, 앞부분)을 보여줘요. Windows가 실제로 어떤 모양으로 저장하는지 볼 때 써요.
+function Show-IdList([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { Write-Host "    (no file: $Path)"; return }
+    $b = [IO.File]::ReadAllBytes($Path)
+    $flags = [BitConverter]::ToUInt32($b, 0x14)
+    Write-Host ("    {0}: {1} bytes, flags 0x{2:X8}" -f (Split-Path $Path -Leaf), $b.Length, $flags)
+    if (($flags -band 0x1) -eq 0) { Write-Host '    (no IDList)'; return }
+    $pos = 0x4C + 2
+    $end = $pos + [BitConverter]::ToUInt16($b, 0x4C)
+    while ($pos + 2 -le $end) {
+        $size = [BitConverter]::ToUInt16($b, $pos)
+        if ($size -eq 0) { break }
+        $type = $b[$pos + 2]
+        $extra = if ($type -eq 0x1F -and $size -ge 20) { ([Guid]::new([byte[]]$b[($pos + 4)..($pos + 19)])).ToString() } else { (($b[($pos + 2)..([Math]::Min($pos + $size - 1, $pos + 40))] | ForEach-Object { $_.ToString('X2') }) -join ' ') }
+        Write-Host ("      item size {0,4} type 0x{1:X2}  {2}" -f $size, $type, $extra)
+        $pos += $size
+    }
+}
+
 # 바로가기에서 LinkInfo와 상대 경로를 지워서 IDList(셸 항목)만 남겨요. 검사기가 IDList만으로 대상을 찾는지 확인해요.
 function Save-IdListOnlyShortcut([string]$Source, [string]$Dest) {
     $b = [IO.File]::ReadAllBytes($Source)
@@ -250,6 +269,7 @@ try {
     foreach ($case in @(@{ Path = $lnkTemp; What = 'Windows-made shortcut' }, @{ Path = $lnkIdList; What = 'IDList-only shortcut' }, @{ Path = $lnkCmd; What = 'shortcut to cmd /c start' })) {
         $lf = @($rep1.findings | Where-Object { $_.ruleId -eq 'RUN-002' -and $_.location -eq $case.Path })
         Check ($lf.Count -eq 1 -and $lf[0].severity -eq 'High') "$($case.What) to a Temp payload is High"
+        if ($lf.Count -ne 1) { Show-IdList $case.Path }
         if ($lf.Count -eq 1) {
             Check ($lf[0].target -eq $evilExe) "$($case.What) targets the payload (got $($lf[0].target))"
             Check (@($lf[0].reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -eq 0) "$($case.What) is not mistaken for a disguised shortcut"
@@ -259,7 +279,7 @@ try {
     Check ($lnkOkFindings.Count -eq 0) "Windows-made shortcut to a signed program is not reported $(($lnkOkFindings | ForEach-Object { $_.reasons -join ' / ' }) -join ' | ')"
     # 러너의 진짜 바로가기(시작 메뉴 등)를 대상 위장으로 잘못 보면 안 돼요.
     $disguised = @($rep1.findings | Where-Object { @($_.reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -gt 0 })
-    Check ($disguised.Count -eq 0) "no real shortcut on the runner is flagged as disguised ($(@($disguised.location) -join ', '))"
+    Check ($disguised.Count -eq 0) "no real shortcut on the runner is flagged as disguised ($(@($disguised | ForEach-Object { $_.location }) -join ', '))"
     # 이름만 SafetySecurity인 작업은 건너뛰지 않고 위장(TASK-003)으로 알려야 해요 (예전에는 이름만 보고 건너뛰었어요).
     $fake = @($rep1.findings | Where-Object { $_.location -eq "작업 스케줄러\$fakeTaskName" })
     Check ($fake.Count -eq 1 -and $fake[0].ruleId -eq 'TASK-003' -and $fake[0].severity -eq 'High') "task only named like SafetySecurity is TASK-003 High (got $(@($fake | ForEach-Object { "$($_.ruleId) $($_.severity)" }) -join ', '))"

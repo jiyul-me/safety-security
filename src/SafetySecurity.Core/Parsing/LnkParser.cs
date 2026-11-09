@@ -54,6 +54,9 @@ public static class LnkParser
     private const int EnvironmentBlockSize = 0x314;
     private const uint FileEntryExtensionSignature = 0xBEEF0004;
 
+    /// <summary>셸의 '사용자 파일' 폴더(CLSID_UsersFiles). 이 루트 다음 항목은 %USERPROFILE% 아래 경로예요.</summary>
+    private static readonly Guid UsersFilesFolder = new("59031A47-3F72-44A7-89C5-5595FE6B30EE");
+
     private static readonly byte[] LinkClsid =
     [
         0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46,
@@ -294,6 +297,13 @@ public static class LnkParser
                 if (path is not null)
                 {
                     return null;
+                }
+
+                // 사용자 폴더(%USERPROFILE%)가 루트인 목록도 있어요. Windows는 사용자 폴더 안의 파일을 이렇게 저장하기도 해요.
+                // 환경 변수 그대로 두면 바로가기 대상 후보를 만들 때 실제 경로로 바뀌어요 (ShortcutTargets.Candidates).
+                if (item.Length >= 20 && new Guid(item.Slice(4, 16)) == UsersFilesFolder)
+                {
+                    path = "%USERPROFILE%";
                 }
 
                 continue;
