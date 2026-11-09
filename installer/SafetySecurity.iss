@@ -104,9 +104,14 @@ Name: "{app}"; Flags: uninsalwaysuninstall
 Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
+[Tasks]
+; 바탕화면 바로가기 (기본으로 켜져 있어요). 누르면 지금 검사하고 보고서를 열어요.
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+
 [Icons]
 ; 인자 없이 실행하면 지금 검사하고 보고서를 열어요. AppUserModelID를 붙여야 알림에 이 앱 이름·아이콘이 보여요.
 Name: "{autoprograms}\SafetySecurity"; Filename: "{app}\SafetySecurity.exe"; Comment: "{cm:ShortcutComment}"; AppUserModelID: "SafetySecurity.Scanner"
+Name: "{autodesktop}\SafetySecurity"; Filename: "{app}\SafetySecurity.exe"; Comment: "{cm:ShortcutComment}"; AppUserModelID: "SafetySecurity.Scanner"; Tasks: desktopicon
 
 [Registry]
 ; Win+R에서 'safetysecurity'로 실행할 수 있게 해요 (보고서의 숨기기 안내가 이 방법을 써요).

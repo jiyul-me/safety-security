@@ -35,11 +35,13 @@ function Get-Layout([bool]$Admin) {
         $dir = Join-Path $env:ProgramFiles 'SafetySecurity'
         $hive = 'HKLM:'
         $lnk = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\SafetySecurity.lnk'
+        $desk = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'SafetySecurity.lnk'
     }
     else {
         $dir = Join-Path $env:LOCALAPPDATA 'Programs\SafetySecurity'
         $hive = 'HKCU:'
         $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\SafetySecurity.lnk'
+        $desk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SafetySecurity.lnk'
     }
     return [pscustomobject]@{
         Admin     = $Admin
@@ -47,6 +49,7 @@ function Get-Layout([bool]$Admin) {
         Exe       = Join-Path $dir 'SafetySecurity.exe'
         Uninstall = Join-Path $dir 'unins000.exe'
         Shortcut  = $lnk
+        Desktop   = $desk
         AppPaths  = "$hive\Software\Microsoft\Windows\CurrentVersion\App Paths\SafetySecurity.exe"
         AppsEntry = "$hive\Software\Microsoft\Windows\CurrentVersion\Uninstall\$($AppId)_is1"
     }
@@ -117,6 +120,10 @@ function Assert-Installed($L) {
     }
 
     Check (Test-Path -LiteralPath $L.Shortcut) "Start menu shortcut: $($L.Shortcut)"
+    Check (Test-Path -LiteralPath $L.Desktop) "desktop shortcut (default task): $($L.Desktop)"
+    if (Test-Path -LiteralPath $L.Desktop) {
+        Check ((New-Object -ComObject WScript.Shell).CreateShortcut($L.Desktop).TargetPath -eq $L.Exe) 'desktop shortcut points to the installed exe'
+    }
     if (Test-Path -LiteralPath $L.Shortcut) {
         $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($L.Shortcut)
         Check ($lnk.TargetPath -eq $L.Exe) 'shortcut points to the installed exe'
@@ -167,6 +174,7 @@ function Uninstall-And-Assert($L) {
         Check ($null -eq (Get-TaskExe $n)) "task \SafetySecurity\$n removed"
     }
     Check (-not (Test-Path -LiteralPath $L.Shortcut)) 'Start menu shortcut removed'
+    Check (-not (Test-Path -LiteralPath $L.Desktop)) 'desktop shortcut removed'
     Check (-not (Test-Path -LiteralPath $L.AppPaths)) 'App Paths removed'
     Check (-not (Test-Path -LiteralPath $L.AppsEntry)) 'Apps list entry removed'
     Check (-not (Test-Path $ToastKey)) 'notification identity removed'
