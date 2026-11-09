@@ -263,6 +263,18 @@ internal static unsafe partial class NativeMethods
     [LibraryImport("kernel32.dll")]
     internal static partial uint GetOEMCP();
 
+    internal const int STD_OUTPUT_HANDLE = -11;
+    internal const uint FILE_TYPE_DISK = 0x0001;
+    internal const uint FILE_TYPE_PIPE = 0x0003;
+
+    /// <summary>자기 프로세스의 표준 출력 핸들 (출력이 어디로 가는지 확인용).</summary>
+    [LibraryImport("kernel32.dll")]
+    internal static partial IntPtr GetStdHandle(int nStdHandle);
+
+    /// <summary>핸들 종류: 파일(DISK), 파이프(PIPE), 콘솔(CHAR), 알 수 없음(UNKNOWN).</summary>
+    [LibraryImport("kernel32.dll")]
+    internal static partial uint GetFileType(IntPtr hFile);
+
     /// <summary>8.3 짧은 이름(C:\Users\RUNNER~1)을 긴 이름으로 바꿔요.</summary>
     [LibraryImport("kernel32.dll", EntryPoint = "GetLongPathNameW", StringMarshalling = StringMarshalling.Utf16)]
     internal static partial uint GetLongPathName(string lpszShortPath, char* lpszLongPath, uint cchBuffer);
