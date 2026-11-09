@@ -46,6 +46,8 @@ AlwaysShowDirOnReadyPage=yes
 ; 명령줄: /CURRENTUSER 또는 /ALLUSERS
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog commandline
+; 이미 설치돼 있으면 묻지 않고 그 방식 그대로 업데이트해요. 설치 방식을 바꾸려면 설정 → 앱에서 먼저 제거해야 해요.
+; 다른 방식으로 설치된 것이 있으면(명령줄 /ALLUSERS·/CURRENTUSER 등) InitializeSetup이 아무것도 바꾸지 않고 멈춰요.
 UsePreviousPrivileges=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -94,11 +96,15 @@ english.ShortcutComment=Scan now and open the report
 english.RegisterFailed=Automatic scans could not be registered (code %1).%n%nYou can still scan from SafetySecurity in the Start menu. Details are in:%n%2
 english.PurgeQuestion=Also delete scan history and reports?%n%nChoose No to keep them for a later reinstall.
 english.AdminUserDataKept=The administrator scan history was removed.%n%nYour account's own scan history (%1) is not deleted with administrator rights, for safety. Delete that folder yourself if you no longer need it.
+english.OtherModeUser=SafetySecurity is already installed for your account only.%n%nTo use administrator rights instead, first remove SafetySecurity in Settings > Apps, then run Setup again and choose administrator rights. To update the existing copy, install it for your account only (/CURRENTUSER on the command line).%n%nSetup stopped without changing anything: with two copies, removing one would also delete the other's automatic scans.
+english.OtherModeAdmin=SafetySecurity is already installed with administrator rights.%n%nTo install it for your account only instead, first remove SafetySecurity in Settings > Apps, then run Setup again. To update the existing copy, install it with administrator rights (/ALLUSERS on the command line).%n%nSetup stopped without changing anything: with two copies, removing one would also delete the other's automatic scans.
 korean.FirstScan=지금 첫 검사하기 (끝나면 보고서가 열려요)
 korean.ShortcutComment=지금 검사하고 보고서 보기
 korean.RegisterFailed=자동 검사를 등록하지 못했어요 (코드 %1).%n%n시작 메뉴의 SafetySecurity로 직접 검사할 수는 있어요. 자세한 내용은 아래 파일에 있어요:%n%2
 korean.PurgeQuestion=검사 기록과 보고서도 지울까요?%n%n'아니요'를 누르면 남겨 두고, 다시 설치했을 때 이어서 써요.
 korean.AdminUserDataKept=관리자 검사 기록은 지웠어요.%n%n내 계정의 검사 기록 폴더(%1)는 안전을 위해 관리자 권한으로 지우지 않아요. 더 필요 없으면 직접 지워 주세요.
+korean.OtherModeUser=SafetySecurity가 이미 '내 계정에만' 설치돼 있어요.%n%n관리자 권한으로 바꾸려면 먼저 설정 → 앱에서 SafetySecurity를 제거한 뒤, 설치 프로그램을 다시 실행해 '관리자 권한으로 설치'를 골라 주세요. 지금 설치된 것을 업데이트하려면 '내 계정에만' 설치하면 돼요 (명령줄은 /CURRENTUSER).%n%n두 방식으로 함께 설치하면 한쪽을 제거할 때 다른 쪽의 자동 검사까지 지워져서, 아무것도 바꾸지 않고 멈췄어요.
+korean.OtherModeAdmin=SafetySecurity가 이미 관리자 권한으로 설치돼 있어요.%n%n내 계정에만 설치하려면 먼저 설정 → 앱에서 SafetySecurity를 제거한 뒤 설치 프로그램을 다시 실행해 주세요. 지금 설치된 것을 업데이트하려면 관리자 권한으로 설치하면 돼요 (명령줄은 /ALLUSERS).%n%n두 방식으로 함께 설치하면 한쪽을 제거할 때 다른 쪽의 자동 검사까지 지워져서, 아무것도 바꾸지 않고 멈췄어요.
 
 [Dirs]
 ; 예전에 zip으로 install 해서 폴더가 이미 있었어도, 제거할 때 비어 있으면 지워요.
@@ -132,6 +138,40 @@ Type: dirifempty; Name: "{app}"
 Filename: "{app}\SafetySecurity.exe"; Description: "{cm:FirstScan}"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [Code]
+const
+  // 앱 목록(설정 → 앱) 항목의 키예요. Inno Setup이 '<AppId>_is1'로 만들어요. [Setup]의 AppId와 같아야 해요.
+  AppsEntryKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{64EA0F9C-E539-4775-B5E3-063E9FF952D5}_is1';
+
+// 다른 설치 방식으로 설치된 SafetySecurity가 있는지 봐요.
+// 관리자 설치는 64비트 HKLM에, 내 계정 설치는 HKCU에 앱 목록 항목이 있어요.
+function OtherModeInstalled(): Boolean;
+begin
+  if IsAdminInstallMode() then
+    Result := RegKeyExists(HKEY_CURRENT_USER, AppsEntryKey)
+  else
+    Result := RegKeyExists(HKLM64, AppsEntryKey);
+end;
+
+// 두 방식으로 함께 설치하면 앱 목록·바로가기가 두 개씩 생기고, 같은 이름의 예약 작업을 서로 덮어써요.
+// 한쪽을 제거하면 그 제거 프로그램이 다른 쪽의 작업까지 지워서 자동 검사가 멈춰요.
+// 그래서 다른 방식으로 설치된 것이 있으면 아무것도 바꾸지 않고 멈춰요. 자동으로 지우지는 않아요 (사용자가 앱 목록에서 제거해요).
+function InitializeSetup(): Boolean;
+var
+  Msg: String;
+begin
+  Result := True;
+  if OtherModeInstalled() then
+  begin
+    if IsAdminInstallMode() then
+      Msg := CustomMessage('OtherModeUser')
+    else
+      Msg := CustomMessage('OtherModeAdmin');
+    Log('SafetySecurity is already installed in the other install mode; Setup stops without changing anything.');
+    SuppressibleMsgBox(Msg, mbError, MB_OK, IDOK);
+    Result := False;
+  end;
+end;
+
 function SafetySecurityExe(): String;
 begin
   Result := ExpandConstant('{app}\SafetySecurity.exe');

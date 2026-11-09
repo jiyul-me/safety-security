@@ -5,6 +5,8 @@
     - my account only (/CURRENTUSER): %LOCALAPPDATA%\Programs\SafetySecurity, HKCU
     - administrator   (/ALLUSERS):   C:\Program Files\SafetySecurity, HKLM, + admin scan task (needs an elevated shell)
       and the admin scan data in C:\Program Files\SafetySecurity\data (standard users cannot write there)
+  When both modes can be tested, it also checks that Setup in the other mode stops and changes nothing
+  while SafetySecurity is installed (two installs would share and delete each other's scheduled tasks).
   Usage: pwsh tests/integration/Test-Installer.ps1 -Setup dist-installer/SafetySecurity-Setup-0.2.0.exe -Version 0.2.0
 #>
 param(
@@ -15,6 +17,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+# 이 파일은 UTF-8(BOM 있음)로 저장해야 해요. BOM이 없으면 Windows PowerShell 5.1이 시스템 코드 페이지로 읽어서
+# 한글 비교('작업 스케줄러\...')가 늘 어긋나고, 그런 검사는 아무것도 확인하지 않은 채 통과해요. 그럴 때는 바로 멈춰요.
+if ('작업'.Length -ne 2) { throw 'Test-Installer.ps1 was read with the wrong encoding. Save it as UTF-8 with BOM (see .editorconfig) or run it with pwsh.' }
 $Setup = (Resolve-Path $Setup).Path
 
 # installer/SafetySecurity.iss의 AppId와 같아야 해요.
@@ -30,6 +35,7 @@ $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIde
 # CI 러너는 관리자 권한이라, 내 계정에만 설치해도 설치 프로그램이 실행한 exe는 이 폴더를 써요.
 $AdminData = Join-Path $env:ProgramFiles 'SafetySecurity\data'
 $DataRoot = if ($elevated) { $AdminData } else { Join-Path $env:LOCALAPPDATA 'SafetySecurity' }
+$canAdmin = $elevated -and -not $SkipAdmin
 
 $script:failures = 0
 function Check([bool]$cond, [string]$what) {
@@ -212,6 +218,30 @@ function Assert-OwnTasksRecognised($L) {
     }
 }
 
+# 다른 방식으로 이미 설치돼 있으면 설치 프로그램은 아무것도 바꾸지 않고 멈춰야 해요 (SafetySecurity.iss의 InitializeSetup).
+# 두 방식이 함께 설치되면 같은 이름의 예약 작업을 서로 덮어쓰고, 한쪽을 제거할 때 다른 쪽의 작업까지 지워요.
+function Assert-OtherModeBlocked($L, [string]$Name) {
+    $other = Get-Layout (-not $L.Admin)
+    $log = Join-Path $work "$Name.log"
+    $mode = if ($other.Admin) { '/ALLUSERS' } else { '/CURRENTUSER' }
+    Check (-not (Test-Path -LiteralPath $other.AppsEntry)) "only one install before the test: $($other.AppsEntry) is absent"
+    # 시험 전부터 있던 파일(예: zip으로 install 한 exe)은 그대로 두고, 설치 프로그램이 새로 만들지 않았는지만 봐요.
+    $paths = @($other.Exe, $other.Shortcut, $other.Desktop, $other.AppPaths)
+    $before = @($paths | ForEach-Object { Test-Path -LiteralPath $_ })
+    $code = Invoke-Quiet $Setup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', $mode, "/LOG=`"$log`"") "Setup ($Name)"
+    Check ($code -ne 0) "Setup $mode stops while SafetySecurity is installed the other way (exit $code)"
+    $logText = if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Raw } else { '' }
+    $why = "$logText" -match 'already installed in the other install mode'
+    Check $why 'Setup log says it stopped because of the other install'
+    if (-not $why -and (Test-Path -LiteralPath $log)) { Get-Content -LiteralPath $log -Tail 20 | Out-Host }
+    Check (-not (Test-Path -LiteralPath $other.AppsEntry)) "no second Apps list entry: $($other.AppsEntry)"
+    for ($i = 0; $i -lt $paths.Count; $i++) {
+        Check ((Test-Path -LiteralPath $paths[$i]) -eq $before[$i]) "Setup did not create or remove $($paths[$i])"
+    }
+    # 원래 설치는 그대로여야 해요 (작업이 여전히 원래 exe를 실행하는지도 봐요).
+    Assert-Installed $L
+}
+
 function Uninstall-And-Assert($L) {
     if (-not (Test-Path -LiteralPath $L.Uninstall)) {
         Check $false 'uninstaller present (cannot uninstall)'
@@ -268,13 +298,18 @@ function Test-Mode([bool]$Admin) {
     Check ((Install-Setup $L "reinstall-$($Admin)") -eq 0) 'Setup exits 0 when reinstalling'
     Assert-Installed $L
 
+    if ($canAdmin) {
+        Write-Host "== Setup in the other install mode while installed ($label)"
+        Assert-OtherModeBlocked $L "other-mode-$($Admin)"
+    }
+
     Write-Host "== Uninstall ($label)"
     Uninstall-And-Assert $L
 }
 
 Test-Mode $false
 
-if ($SkipAdmin -or -not $elevated) {
+if (-not $canAdmin) {
     Write-Host '== Administrator install skipped (needs an elevated shell)'
 }
 else {

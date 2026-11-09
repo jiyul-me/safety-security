@@ -10,6 +10,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+# 이 파일은 UTF-8(BOM 있음)로 저장해야 해요. BOM이 없으면 Windows PowerShell 5.1이 시스템 코드 페이지(CP949·CP1252)로 읽어서
+# '서명 없음' 같은 한글 비교가 늘 어긋나고, 그런 검사는 아무것도 확인하지 않은 채 통과해요. 그럴 때는 바로 멈춰요.
+if ('서명'.Length -ne 2) { throw 'Run-Integration.ps1 was read with the wrong encoding. Save it as UTF-8 with BOM (see .editorconfig) or run it with pwsh.' }
 $Exe = (Resolve-Path $Exe).Path
 $root = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
 $work = Join-Path $root 'ss-it'
@@ -224,6 +227,9 @@ try {
         Check ($com[0].ruleId -eq 'COM-001') "COM hijack rule COM-001 (got $($com[0].ruleId))"
         Check ($com[0].target -eq $evilDll) 'COM hijack target is the fake DLL'
         Check ($com[0].isNew -eq $true) 'COM hijack marked new'
+        # 2단계의 System32 서명 비교는 보통 대상이 0개라서, 한글 증거 이름·값이 보고서와 맞는지 여기서 꼭 확인해요.
+        # (가짜 DLL은 서명이 없어요. 맞지 않으면 그 비교가 아무것도 확인하지 않은 채 통과해요.)
+        Check (@($com[0].evidence | Where-Object { $_.key -eq '서명' -and $_.value -eq '서명 없음' }).Count -ge 1) "unsigned evidence label matches the report ('서명' = '서명 없음')"
     }
     $run = @($rep1.findings | Where-Object { $_.category -eq 'Autorun' -and $_.location -like "*\$runName" })
     Check ($run.Count -eq 1 -and $run[0].severity -eq 'High') 'encoded PowerShell Run entry is High'

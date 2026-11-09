@@ -97,9 +97,15 @@ internal static class TaskInstaller
             output.Line($"작업 {failures}개를 등록하지 못했어요. 위 메시지를 확인해 주세요.");
         }
 
-        if (!admin)
+        if (!admin && !InstalledBySetup())
         {
             output.Line("팁: 관리자 설치(install --admin)를 하면 Defender 제외 목록·숨겨진 작업·WMI 구독도 확인하고, 검사기 파일도 악성코드가 바꾸기 어려운 Program Files에 둬요.");
+        }
+        else if (!admin && RunsFromLocalAppData())
+        {
+            // 설치 프로그램으로 '내 계정에만' 설치한 exe에서는 install --admin을 거절해요 (위). 설치 프로그램도 설치 방식을 바꿔 덮어쓰지 않아서,
+            // 앱 목록에서 제거한 뒤 다시 설치하는 방법을 알려요.
+            output.Line("팁: 관리자 권한으로 설치하면 Defender 제외 목록·숨겨진 작업·WMI 구독도 확인하고, 검사기 파일도 악성코드가 바꾸기 어려운 Program Files에 둬요. 설정 → 앱에서 SafetySecurity를 제거한 뒤 설치 프로그램을 다시 실행해 '관리자 권한으로 설치'를 고르세요.");
         }
 
         return failures == 0 ? 0 : 1;

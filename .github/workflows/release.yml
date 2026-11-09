@@ -18,6 +18,12 @@ jobs:
   release:
     if: github.event_name == 'push' || github.ref == 'refs/heads/main'
     runs-on: windows-latest
+    # 같은 버전의 실행이 겹치면(Run workflow를 두 번, 또는 Run workflow와 태그 push) 초안이 두 개 생길 수 있어요.
+    # 뒤의 실행은 앞의 실행이 끝날 때까지 기다렸다가, 아래 확인에서 앞의 실행이 만든 초안을 보고 건너뛰어요.
+    # 앞의 실행을 취소하지는 않아요 (초안을 Publish해서 시작된 실행이 빌드 중인 실행을 끊으면 안 돼요).
+    concurrency:
+      group: release-${{ inputs.version || github.ref_name }}
+      cancel-in-progress: false
     env:
       TAG: ${{ inputs.version || github.ref_name }}
     permissions:
@@ -31,21 +37,8 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: "10.0.x"
-      - name: Skip if this release already exists
-        id: existing
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # 초안 릴리스를 Publish하면 태그가 생기면서 이 워크플로가 다시 실행돼요. 그때는 다시 빌드하지 않아요.
-          gh release view "$env:TAG" --json tagName 2>$null | Out-Null
-          $exists = $LASTEXITCODE -eq 0
-          "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          if ($exists) { Write-Host "Release $env:TAG already exists; nothing to do." }
-          exit 0
       - name: Version from tag
         id: ver
-        if: steps.existing.outputs.exists != 'true'
         shell: pwsh
         run: |
           if ("$env:TAG" -notmatch '^v') { throw "Tag must start with v (e.g. v0.1.0-rc.1)" }
@@ -53,6 +46,79 @@ jobs:
           if ($v -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') { throw "Tag must look like v1.2.3 or v1.2.3-rc.1" }
           "version=$v" >> $env:GITHUB_OUTPUT
           "prerelease=$($v.Contains('-'))".ToLower() >> $env:GITHUB_OUTPUT
+      - name: Skip if this release is already finished
+        id: existing
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 초안 릴리스를 Publish하면 태그가 생기면서 이 워크플로가 다시 실행돼요. 그때는 다시 빌드하지 않아요.
+          # 초안은 파일 세 개가 모두 올라가 있어야 끝난 거예요. 올리다 실패한 초안(Re-run, 또는 웹에서 미리 만든 초안)은
+          # 다시 빌드해서 그 초안에 파일을 모두 다시 올려요. 게시된 릴리스는 여기서 바꾸지 않아요.
+          $v = '${{ steps.ver.outputs.version }}'
+          $expected = @("SafetySecurity-Setup-$v.exe", "SafetySecurity-$v-win-x64.zip", 'SHA256SUMS.txt')
+          $json = gh release view "$env:TAG" --json isDraft,assets 2> gh-err.txt
+          $code = $LASTEXITCODE
+          $err = if (Test-Path gh-err.txt) { Get-Content gh-err.txt -Raw } else { '' }
+          $exists = $false
+          $draft = $false
+          if ($code -ne 0) {
+            if ("$err" -notmatch 'not found') { throw "Could not check release $env:TAG (gh exit $code): $err" }
+            Write-Host "No release $env:TAG yet; building it."
+          }
+          else {
+            $r = ($json -join "`n") | ConvertFrom-Json
+            $done = @($r.assets | Where-Object { $expected -contains $_.name -and $_.size -gt 0 -and "$($_.state)" -in @('', 'uploaded') } | ForEach-Object { $_.name })
+            $missing = @($expected | Where-Object { $done -notcontains $_ })
+            if (-not $r.isDraft) {
+              $exists = $true
+              if ($missing.Count -gt 0) { Write-Host "::warning::Published release $env:TAG is missing $($missing -join ', '). A published release is not changed here; upload the files by hand if they are needed." }
+              else { Write-Host "Release $env:TAG is already published; nothing to do." }
+            }
+            elseif ($missing.Count -eq 0) {
+              $exists = $true
+              Write-Host "Draft release $env:TAG already has every file; nothing to do."
+            }
+            else {
+              $draft = $true
+              Write-Host "::warning::Draft release $env:TAG is missing $($missing -join ', '). Rebuilding and uploading every file to the same draft."
+            }
+          }
+          "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          "draft=$($draft.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          exit 0
+      - name: Tag must point at this commit
+        id: tag
+        if: steps.existing.outputs.exists != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Actions에서 시작하면 main의 지금 커밋으로 빌드해요. 같은 이름의 태그가 이미 다른 커밋을 가리키면 릴리스의
+          # 소스(태그)와 다른 커밋으로 만든 파일·출처 증명이 붙으니 멈춰요. 주석 달린 태그(git tag -a)는 커밋까지 따라가요.
+          $repo = '${{ github.repository }}'
+          # --jq는 종류와 SHA를 한 줄씩 출력해요 (gh에 따옴표가 든 인자를 넘기지 않으려고요).
+          $ref = @(gh api "repos/$repo/git/ref/tags/$env:TAG" --jq '.object.type, .object.sha' 2> gh-err.txt)
+          if ($LASTEXITCODE -ne 0) {
+            $err = Get-Content gh-err.txt -Raw
+            if ("$err" -notmatch 'HTTP 404') { throw "Could not look up tag ${env:TAG}: $err" }
+            Write-Host "Tag $env:TAG does not exist yet; publishing the draft creates it at $env:GITHUB_SHA."
+            "tag_exists=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $type = "$($ref[0])".Trim(); $sha = "$($ref[1])".Trim()
+          $tagObject = $sha
+          for ($i = 0; $type -eq 'tag' -and $i -lt 5; $i++) {
+            $ref = @(gh api "repos/$repo/git/tags/$sha" --jq '.object.type, .object.sha')
+            if ($LASTEXITCODE -ne 0) { throw "Could not read annotated tag $env:TAG ($sha)" }
+            $type = "$($ref[0])".Trim(); $sha = "$($ref[1])".Trim()
+          }
+          # 태그 push 실행의 github.sha가 주석 달린 태그 객체를 가리키는 경우도 받아들여요 (같은 태그예요).
+          if ($type -ne 'commit' -or ($sha -ne $env:GITHUB_SHA -and $tagObject -ne $env:GITHUB_SHA)) {
+            throw "Tag $env:TAG already points at $type $sha, not at the commit this run builds ($env:GITHUB_SHA). Re-run the original run for this tag from the Actions tab, or move or delete the tag, or release a new version."
+          }
+          Write-Host "Tag $env:TAG points at $env:GITHUB_SHA."
+          "tag_exists=true" >> $env:GITHUB_OUTPUT
       - name: Test
         if: steps.existing.outputs.exists != 'true'
         run: dotnet test tests/SafetySecurity.Core.Tests -c Release
@@ -115,6 +181,45 @@ jobs:
             $notes = @('--notes-file', 'release-notes.md')
           }
           else { $notes = @('--generate-notes') }
-          # 태그가 아직 없으면 (workflow_dispatch) 이 커밋을 대상으로 해요. 태그는 초안을 Publish할 때 만들어져요.
-          gh release create "$env:TAG" "$env:SETUP" "$env:ZIP" SHA256SUMS.txt `
-            --target "${{ github.sha }}" --title "SafetySecurity $env:TAG" --draft @notes @extra
+          $files = @($env:SETUP, $env:ZIP, 'SHA256SUMS.txt')
+          if ("${{ steps.existing.outputs.draft }}" -eq 'true') {
+            # 파일이 덜 올라간 초안이 있어요. 초안을 또 만들지 않고, 이번 빌드의 파일 세 개를 모두 그 초안에 다시 올려요.
+            # 빠진 파일만 올리면 SHA256SUMS.txt·출처 증명이 다른 빌드의 파일과 섞여요. 관리자가 쓴 릴리스 노트는 그대로 둬요.
+            if ("${{ steps.tag.outputs.tag_exists }}" -ne 'true') {
+              # 태그는 초안을 Publish할 때 만들어져요. 이번에 빌드한 커밋에 만들어지게 해요.
+              gh release edit "$env:TAG" --target "${{ github.sha }}"
+              if ($LASTEXITCODE -ne 0) { throw "Could not set the target of draft $env:TAG" }
+            }
+            $body = gh release view "$env:TAG" --json body --jq .body
+            if ($LASTEXITCODE -ne 0) { throw "Could not read draft $env:TAG" }
+            if (-not "$body".Trim() -and (Test-Path release-notes.md)) {
+              gh release edit "$env:TAG" --notes-file release-notes.md
+              if ($LASTEXITCODE -ne 0) { throw "Could not write the notes of draft $env:TAG" }
+            }
+            gh release upload "$env:TAG" @files --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Uploading to draft $env:TAG failed. Re-run the job to upload again." }
+          }
+          else {
+            # 태그가 아직 없으면 (workflow_dispatch) 이 커밋을 대상으로 해요. 태그는 초안을 Publish할 때 만들어져요.
+            gh release create "$env:TAG" @files `
+              --target "${{ github.sha }}" --title "SafetySecurity $env:TAG" --draft @notes @extra
+            if ($LASTEXITCODE -ne 0) { throw "Creating draft $env:TAG failed. Re-run the job: a draft with missing files is reused and gets every file again." }
+          }
+      - name: Check the draft has every file
+        if: steps.existing.outputs.exists != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 올라간 파일이 이번 빌드의 파일과 이름·크기까지 같은지 봐요. 하나라도 다르면 실패로 끝내서 Re-run이 다시 올리게 해요.
+          $json = gh release view "$env:TAG" --json isDraft,assets
+          if ($LASTEXITCODE -ne 0) { throw "Could not read release $env:TAG" }
+          $r = ($json -join "`n") | ConvertFrom-Json
+          $bad = @()
+          foreach ($f in @($env:SETUP, $env:ZIP, 'SHA256SUMS.txt')) {
+            $size = (Get-Item -LiteralPath $f).Length
+            $a = @($r.assets | Where-Object { $_.name -eq $f })
+            if ($a.Count -ne 1 -or $a[0].size -ne $size -or "$($a[0].state)" -notin @('', 'uploaded')) { $bad += $f }
+            else { Write-Host "OK  $f ($size bytes)" }
+          }
+          if ($bad.Count -gt 0) { throw "Release $env:TAG is missing files or has incomplete ones: $($bad -join ', '). Re-run the job to upload them again." }
