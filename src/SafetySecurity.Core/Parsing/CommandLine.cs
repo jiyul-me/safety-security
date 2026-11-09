@@ -22,15 +22,24 @@ public sealed record ParsedCommand(string Raw, string Executable, string Argumen
     public bool IsUnquotedWithSpaces => !WasQuoted && Executable.Contains(' ');
 }
 
+/// <summary>명령줄 토큰 하나: 따옴표를 푼 값과 원래 문자열에서의 위치 [Start, End).</summary>
+public readonly record struct CommandToken(string Value, int Start, int End, bool StartsQuoted);
+
 /// <summary>Windows 명령줄에서 실행 파일 경로와 인자를 분리해요.</summary>
 public static class CommandLine
 {
     private static readonly string[] ExecutableExtensions = [".exe", ".com", ".bat", ".cmd"];
 
     /// <summary>CommandLineToArgvW와 비슷한 규칙으로 토큰을 나눠요.</summary>
-    public static List<string> Tokenize(string? text)
+    public static List<string> Tokenize(string? text) => [.. TokenizeWithSpans(text).Select(t => t.Value)];
+
+    /// <summary>
+    /// <see cref="Tokenize"/>와 같지만 각 토큰이 원래 문자열의 어디에서 시작하고 끝나는지도 알려줘요.
+    /// "이 토큰부터 끝까지"를 그대로 잘라 내야 할 때 써요 (예: cmd /c 뒤의 명령).
+    /// </summary>
+    public static List<CommandToken> TokenizeWithSpans(string? text)
     {
-        var result = new List<string>();
+        var result = new List<CommandToken>();
         if (string.IsNullOrEmpty(text))
         {
             return result;
@@ -39,9 +48,15 @@ public static class CommandLine
         var current = new System.Text.StringBuilder();
         var inQuotes = false;
         var hasToken = false;
+        var tokenStart = 0;
         for (var i = 0; i < text.Length; i++)
         {
             var c = text[i];
+            if (!hasToken && !(char.IsWhiteSpace(c) && !inQuotes))
+            {
+                tokenStart = i;
+            }
+
             if (c == '\\')
             {
                 // 백슬래시 n개 + 따옴표 규칙
@@ -87,7 +102,7 @@ public static class CommandLine
             {
                 if (hasToken)
                 {
-                    result.Add(current.ToString());
+                    result.Add(new CommandToken(current.ToString(), tokenStart, i, text[tokenStart] == '"'));
                     current.Clear();
                     hasToken = false;
                 }
@@ -101,7 +116,7 @@ public static class CommandLine
 
         if (hasToken)
         {
-            result.Add(current.ToString());
+            result.Add(new CommandToken(current.ToString(), tokenStart, text.Length, text[tokenStart] == '"'));
         }
 
         return result;

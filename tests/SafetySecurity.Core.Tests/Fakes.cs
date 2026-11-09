@@ -214,6 +214,7 @@ public sealed class TestEnv
         ["LOCALAPPDATA"] = @"C:\Users\jiyul\AppData\Local",
         ["TEMP"] = @"C:\Users\jiyul\AppData\Local\Temp",
         ["PUBLIC"] = @"C:\Users\Public",
+        ["ComSpec"] = @"C:\Windows\System32\cmd.exe",
     });
 
     public ScanContext Context(
