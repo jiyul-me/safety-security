@@ -1,7 +1,9 @@
 using System.Reflection;
 using SafetySecurity.Core.Install;
 using SafetySecurity.Core.Model;
+using SafetySecurity.Core.Rules;
 using SafetySecurity.Install;
+using SafetySecurity.Notify;
 using SafetySecurity.Runtime;
 
 namespace SafetySecurity;
@@ -181,6 +183,11 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
                     };
                     var ok = Notify.ToastNotifier.TryShow([sample], store.Root, firstRun: false, out var error);
                     output.Line(ok ? "알림을 보냈어요. 화면 오른쪽 아래를 확인하세요." : "알림 실패: " + error);
+                    if (ok && Notify.ToastNotifier.IsRegistered() && Advice.NotificationsOff(Notify.ToastNotifier.ReadState()) is { } off)
+                    {
+                        // 알림이 꺼져 있으면 Windows가 조용히 버려서 화면에 안 보여요.
+                        output.Line("다만 알림이 보이지 않을 거예요. " + off);
+                    }
                     output.ShowIfNoConsole("SafetySecurity 알림 테스트");
                     return ok ? 0 : 6;
                 }
@@ -313,5 +320,17 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
 
         var tasks = TaskInstaller.ListInstalledTasks();
         output.Line(tasks.Count == 0 ? "등록된 작업: 없음 (install로 등록하세요)" : "등록된 작업: " + string.Join(", ", tasks));
+
+        // 알림 설정은 읽기만 해요. 꺼져 있으면 자동 검사가 찾은 항목을 알려드릴 수 없어요.
+        if (ToastNotifier.IsRegistered())
+        {
+            var state = ToastNotifier.ReadState();
+            output.Line(state switch
+            {
+                NotificationState.Enabled => "알림: 켜져 있어요",
+                NotificationState.Unknown => "알림: 설정을 읽지 못했어요",
+                _ => "알림: " + (Advice.NotificationsOff(state) ?? "꺼져 있어요"),
+            });
+        }
     }
 }

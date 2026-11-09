@@ -51,6 +51,8 @@ internal static class ToastNotifier
             var doc = new XmlDocument();
             doc.LoadXml(xml);
             var toast = new ToastNotification(doc) { ExpirationTime = DateTimeOffset.Now.AddDays(3) };
+            // 설정에서 이 앱 알림이 꺼져 있으면 Show()는 성공한 것처럼 끝나지만 Windows가 조용히 버려요.
+            // 그 경우는 검사 쪽(ScanCommand)이 ReadState()로 따로 확인해서 보고서·로그에 적어요.
             ToastNotificationManager.CreateToastNotifier(AppUserModelId).Show(toast);
             error = null;
             return true;
@@ -73,6 +75,43 @@ internal static class ToastNotifier
         catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Windows 설정의 이 앱 알림 상태를 읽기만 해요 (권한이 필요 없어요). 알림 등록(install)이 없거나 읽지 못하면 Unknown이에요.
+    /// 방해 금지 모드(집중 지원)는 Windows가 알려주지 않아서 알 수 없어요.
+    /// </summary>
+    public static NotificationState ReadState()
+    {
+        try
+        {
+            return Map(ToastNotificationManager.CreateToastNotifier(AppUserModelId));
+        }
+        catch (Exception)
+        {
+            // 알림 플랫폼이 없거나(서버 코어 등) 등록 정보가 없으면 알 수 없다고 봐요.
+            return NotificationState.Unknown;
+        }
+    }
+
+    private static NotificationState Map(global::Windows.UI.Notifications.ToastNotifier notifier)
+    {
+        try
+        {
+            return notifier.Setting switch
+            {
+                NotificationSetting.Enabled => NotificationState.Enabled,
+                NotificationSetting.DisabledForApplication => NotificationState.DisabledForApplication,
+                NotificationSetting.DisabledForUser => NotificationState.DisabledForUser,
+                NotificationSetting.DisabledByGroupPolicy => NotificationState.DisabledByGroupPolicy,
+                NotificationSetting.DisabledByManifest => NotificationState.DisabledByManifest,
+                _ => NotificationState.Unknown,
+            };
+        }
+        catch (Exception)
+        {
+            return NotificationState.Unknown;
         }
     }
 

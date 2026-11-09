@@ -2,6 +2,7 @@ using System.Diagnostics;
 using SafetySecurity.Core.Abstractions;
 using SafetySecurity.Core.Baseline;
 using SafetySecurity.Core.Engine;
+using SafetySecurity.Core.Install;
 using SafetySecurity.Core.Model;
 using SafetySecurity.Core.Reporting;
 using SafetySecurity.Core.Rules;
@@ -112,12 +113,9 @@ internal static class ScanCommand
         var files = new LocalOnlyFileSystemView(rawFiles, classifier);
         var signatures = new CachingSignatureVerifier(new AuthenticodeVerifier(), files, sigCache, () => DateTimeOffset.UtcNow);
         var self = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var p in new[] { Environment.ProcessPath, Path.Combine(TaskInstaller.UserInstallDir, TaskInstaller.ExeName), Path.Combine(TaskInstaller.AdminInstallDir, TaskInstaller.ExeName) })
+        foreach (var p in SelfExecutables.For(o.Scope, Environment.ProcessPath, Path.Combine(TaskInstaller.UserInstallDir, TaskInstaller.ExeName), Path.Combine(TaskInstaller.AdminInstallDir, TaskInstaller.ExeName)))
         {
-            if (p is not null)
-            {
-                self.Add(classifier.Normalize(p));
-            }
+            self.Add(classifier.Normalize(p));
         }
 
         var ctx = new ScanContext
@@ -134,6 +132,13 @@ internal static class ScanCommand
             IsElevated = Environment.IsPrivilegedProcess,
             Scope = o.Scope,
         };
+
+        // 알림이 꺼져 있으면 자동 검사가 새 항목을 찾아도 알려드릴 수 없어요. 설정을 읽기만 해서 보고서에 적어 둬요.
+        var notificationsOff = ToastNotifier.IsRegistered() ? Advice.NotificationsOff(ToastNotifier.ReadState()) : null;
+        if (notificationsOff is not null)
+        {
+            ctx.Coverage.Skipped("알림", notificationsOff);
+        }
 
         var sw = Stopwatch.StartNew();
         output.Line(o.Quick ? "빠른 검사 중이에요 (서비스·예약 작업)…" : "검사 중이에요. 컴퓨터 사용에 방해되지 않게 천천히 검사해요…");
@@ -191,9 +196,11 @@ internal static class ScanCommand
 
         if (decision.ToNotify.Count > 0 && !o.NoToast)
         {
-            if (!ToastNotifier.TryShow(decision.ToNotify, html, decision.FirstRun, out var error))
+            // 알림이 꺼져 있으면 Show()는 성공한 것처럼 끝나도 화면에 안 보여요. 그때도 실패처럼 다뤄요.
+            var shown = ToastNotifier.TryShow(decision.ToNotify, html, decision.FirstRun, out var error);
+            if (!shown || notificationsOff is not null)
             {
-                store.Log("알림 실패: " + error);
+                store.Log("알림 실패: " + (error ?? notificationsOff));
                 if (o.Reason == ScanReason.Manual)
                 {
                     o.Open = true;

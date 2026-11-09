@@ -1,12 +1,17 @@
 using SafetySecurity.Core.Abstractions;
 using SafetySecurity.Core.Engine;
+using SafetySecurity.Core.Install;
 using SafetySecurity.Core.Model;
 using SafetySecurity.Core.Parsing;
 using SafetySecurity.Core.Rules;
 
 namespace SafetySecurity.Core.Scanners;
 
-/// <summary>예약 작업 (schtasks /query /xml로 읽기만 해요).</summary>
+/// <summary>
+/// 예약 작업 (schtasks /query /xml로 읽기만 해요).
+/// SafetySecurity 이름(\SafetySecurity\…, \SafetySecurity-…)을 쓰는 작업은 이름만 믿지 않고 동작까지 확인해요.
+/// 진짜 우리 작업이 아니면 TASK-003(위장), 진짜 우리 작업이 꺼져 있으면 TASK-004로 알려요.
+/// </summary>
 public sealed class ScheduledTaskScanner : IScanner
 {
     public const string CategoryName = "ScheduledTask";
@@ -35,8 +40,15 @@ public sealed class ScheduledTaskScanner : IScanner
         foreach (var task in TaskXmlParser.Parse(xml))
         {
             ctx.Pacer.Step();
-            if (ctx.SelfTaskPrefixes.Any(p => task.Name.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+            if (OwnTasks.HasOwnPrefix(task.Name))
             {
+                // 이름만 보고 건너뛰면, 악성 작업이 이름만 \SafetySecurity-Update처럼 지어서 숨을 수 있어요.
+                var own = EvaluateOwnName(ctx, task);
+                if (own is not null)
+                {
+                    findings.Add(own);
+                }
+
                 continue;
             }
 
@@ -60,9 +72,7 @@ public sealed class ScheduledTaskScanner : IScanner
             return null;
         }
 
-        var command = action.Command.StartsWith('"') ? action.Command : "\"" + action.Command + "\"";
-        var raw = string.IsNullOrEmpty(action.Arguments) ? command : command + " " + action.Arguments;
-        var a = CommandAssessor.Assess(ctx, raw);
+        var a = CommandAssessor.Assess(ctx, RawCommand(action));
         if (a.IsSelf || a.Severity is null)
         {
             return null;
@@ -103,6 +113,167 @@ public sealed class ScheduledTaskScanner : IScanner
             return null;
         }
 
+        var evidence = TaskEvidence(task);
+        evidence.AddRange(a.Evidence);
+        return new Finding
+        {
+            RuleId = "TASK-001",
+            Category = CategoryName,
+            Severity = severity,
+            Title = $"의심스러운 예약 작업: {task.Name}",
+            Location = "작업 스케줄러" + task.Name,
+            Target = a.Target,
+            Reasons = reasons,
+            Evidence = evidence,
+            Advice = Advice.Task(task.Name),
+        };
+    }
+
+    /// <summary>
+    /// 진짜 우리 작업인지: 이름이 우리 작업 이름이고, 동작이 하나뿐이며, 그 동작이 검사기 자신(SelfPaths)을
+    /// 그 작업의 인자 그대로 실행해야 해요 (TaskXmlBuilder가 만드는 모양 그대로).
+    /// </summary>
+    private static bool IsGenuineOwnTask(ScanContext ctx, ScheduledTaskInfo task, OwnTaskSpec spec) =>
+        task.Actions.Count == 1
+        && task.Actions[0] is { Kind: "Exec", Command: { } command } action
+        && ctx.IsSelf(command)
+        && string.Equals(action.Arguments ?? string.Empty, spec.Arguments, StringComparison.Ordinal);
+
+    /// <summary>SafetySecurity 이름을 쓰는 작업을 확인해요. 진짜 우리 작업이 켜져 있으면 null이에요.</summary>
+    private static Finding? EvaluateOwnName(ScanContext ctx, ScheduledTaskInfo task)
+    {
+        var spec = OwnTasks.Find(task.Name);
+        if (spec is not null && IsGenuineOwnTask(ctx, task, spec))
+        {
+            return task.Enabled ? null : DisabledOwnTask(task, spec);
+        }
+
+        return Impersonation(ctx, task, spec);
+    }
+
+    /// <summary>TASK-004: 진짜 우리 작업이 꺼져 있어요. 자동 검사가 멈춰 있다는 뜻이라 보통으로 알려요.</summary>
+    private static Finding DisabledOwnTask(ScheduledTaskInfo task, OwnTaskSpec spec)
+    {
+        var evidence = TaskEvidence(task);
+        evidence.Add(new("명령줄", RawCommand(task.Actions[0])));
+        return new Finding
+        {
+            RuleId = "TASK-004",
+            Category = CategoryName,
+            Severity = Severity.Medium,
+            Title = $"SafetySecurity 자동 검사 작업이 꺼져 있어요: {task.Name}",
+            Location = "작업 스케줄러" + task.Name,
+            Target = null,
+            Reasons =
+            [
+                $"이 작업이 꺼져 있어서 {spec.Purpose}를 하지 않아요.",
+                "직접 끈 적이 없다면 다른 프로그램이 SafetySecurity 검사를 막으려고 껐을 수 있어요.",
+            ],
+            Evidence = evidence,
+            Advice = Advice.DisabledOwnTask(task.Name),
+        };
+    }
+
+    /// <summary>
+    /// TASK-003: SafetySecurity 이름을 쓰지만 우리가 만든 작업이 아니에요 (모르는 이름, 다른 프로그램, 다른 인자, 동작 추가).
+    /// 검사기 이름 뒤에 숨으려는 작업이라 무엇을 실행하든 '높음'이에요. 꺼져 있어도 다시 켜기 쉬워서 낮추지 않아요.
+    /// </summary>
+    private static Finding Impersonation(ScanContext ctx, ScheduledTaskInfo task, OwnTaskSpec? spec)
+    {
+        var reasons = new List<string>
+        {
+            spec is null
+                ? "SafetySecurity 작업처럼 보이는 이름이지만 SafetySecurity가 만드는 작업이 아니에요. 검사를 피하려고 이름을 흉내 냈을 수 있어요."
+                : "SafetySecurity 작업 이름이지만 동작이 SafetySecurity가 등록한 것과 달라요. 다른 프로그램이 작업을 바꿨을 수 있어요.",
+        };
+        var evidence = TaskEvidence(task);
+        string? target = null;
+        string? selfCommand = null;
+        if (task.Actions.Count > 1)
+        {
+            reasons.Add($"동작이 {task.Actions.Count}개 있어요. SafetySecurity 작업은 검사기를 실행하는 동작 하나만 써요.");
+        }
+
+        foreach (var action in task.Actions)
+        {
+            if (action.Kind != "Exec" || string.IsNullOrWhiteSpace(action.Command))
+            {
+                reasons.Add($"'{action.Kind}' 동작이 있어요. SafetySecurity 작업은 프로그램 실행(Exec) 동작만 써요.");
+                if (action.ClassId is { } clsid)
+                {
+                    evidence.Add(new("COM 클래스", clsid));
+                }
+
+                continue;
+            }
+
+            var raw = RawCommand(action);
+            if (ctx.IsSelf(action.Command))
+            {
+                // 검사기 자신을 실행하더라도 인자가 다르면(uninstall 등) 우리 작업이 아니에요.
+                var args = action.Arguments ?? string.Empty;
+                if (spec is not null && !string.Equals(args, spec.Arguments, StringComparison.Ordinal))
+                {
+                    reasons.Add($"SafetySecurity 검사기를 이 작업이 쓰지 않는 인자로 실행해요: '{args}' (원래 인자: '{spec.Arguments}')");
+                }
+                else if (spec is null && !OwnTasks.All.Any(t => string.Equals(t.Arguments, args, StringComparison.Ordinal)))
+                {
+                    reasons.Add($"SafetySecurity 검사기를 SafetySecurity가 쓰지 않는 인자로 실행해요: '{args}'");
+                }
+
+                evidence.Add(new("명령줄", raw));
+
+                // 대상은 명령줄 전체로 둬요. 인자가 바뀌면 ID도 바뀌어서 새 항목으로 알리고, 엔진이 '검사기 자신'으로 빼지도 않아요.
+                if (!ctx.IsSelf(raw))
+                {
+                    selfCommand ??= raw;
+                }
+
+                continue;
+            }
+
+            var a = CommandAssessor.Assess(ctx, raw);
+            reasons.AddRange(a.Reasons);
+            evidence.AddRange(a.Evidence);
+            if (!a.IsSelf && a.Target is { } t && !ctx.IsSelf(t))
+            {
+                target ??= t;
+            }
+        }
+
+        if (task.Hidden)
+        {
+            reasons.Add("숨김 작업이에요. 작업 스케줄러 기본 화면에 보이지 않아요.");
+        }
+
+        if (!task.Enabled)
+        {
+            reasons.Add("작업이 꺼져 있어요. 하지만 다른 프로그램이 언제든 다시 켤 수 있어요.");
+        }
+
+        return new Finding
+        {
+            RuleId = "TASK-003",
+            Category = CategoryName,
+            Severity = Severity.High,
+            Title = spec is null ? $"SafetySecurity 작업으로 위장한 예약 작업: {task.Name}" : $"SafetySecurity 작업의 동작이 바뀌었어요: {task.Name}",
+            Location = "작업 스케줄러" + task.Name,
+            Target = target ?? selfCommand,
+            Reasons = reasons,
+            Evidence = evidence,
+            Advice = Advice.ImpersonatingTask(task.Name),
+        };
+    }
+
+    private static string RawCommand(TaskAction action)
+    {
+        var command = action.Command ?? string.Empty;
+        command = command.StartsWith('"') ? command : "\"" + command + "\"";
+        return string.IsNullOrEmpty(action.Arguments) ? command : command + " " + action.Arguments;
+    }
+
+    private static List<KeyValuePair<string, string>> TaskEvidence(ScheduledTaskInfo task)
+    {
         var evidence = new List<KeyValuePair<string, string>> { new("작업 이름", task.Name) };
         if (!string.IsNullOrWhiteSpace(task.Author))
         {
@@ -119,19 +290,7 @@ public sealed class ScheduledTaskScanner : IScanner
             evidence.Add(new("실행 계정", task.UserId));
         }
 
-        evidence.AddRange(a.Evidence);
-        return new Finding
-        {
-            RuleId = "TASK-001",
-            Category = CategoryName,
-            Severity = severity,
-            Title = $"의심스러운 예약 작업: {task.Name}",
-            Location = "작업 스케줄러" + task.Name,
-            Target = a.Target,
-            Reasons = reasons,
-            Evidence = evidence,
-            Advice = Advice.Task(task.Name),
-        };
+        return evidence;
     }
 }
 
@@ -182,7 +341,10 @@ public sealed class HiddenTaskScanner : IScanner
 
             var path = taskPath + child;
             var isTask = sub.GetValue("Id") is not null;
-            if (isTask && sub.GetValue("SD") is null && !ctx.SelfTaskPrefixes.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+
+            // 이름으로 빼 주는 작업은 없어요. 우리 작업도 schtasks로 등록해서 항상 SD가 있어요.
+            // SafetySecurity 이름을 쓰는데 SD가 없으면 오히려 검사기 이름 뒤에 숨은 작업이에요.
+            if (isTask && sub.GetValue("SD") is null)
             {
                 findings.Add(new Finding
                 {

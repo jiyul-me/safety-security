@@ -63,7 +63,9 @@
 | ID | 내용 | 위험도 |
 |---|---|---|
 | `TASK-001` | 작업 동작이 의심스러운 명령줄·파일 | 명령줄 판정 기준. 숨김 작업이면서 사용자 폴더 파일이면 한 단계 올림. `\Microsoft\` 작업이 Windows 폴더의 **없는 파일**을 가리키는 것뿐이면 업데이트가 남긴 흔적이라 보고하지 않아요 (예: `USO_UxBroker` → `MusNotification.exe`) |
-| `TASK-002` | `TaskCache\Tree`에서 보안 설명자(SD)가 지워진 작업 (Tarrask 수법) — 관리자 검사 | **높음** |
+| `TASK-002` | `TaskCache\Tree`에서 보안 설명자(SD)가 지워진 작업 (Tarrask 수법) — 관리자 검사. SafetySecurity 이름을 쓰는 작업도 빼 주지 않아요 (진짜 SafetySecurity 작업은 항상 SD가 있어요) | **높음** |
+| `TASK-003` | SafetySecurity 이름(`\SafetySecurity\…`, `\SafetySecurity-…`)을 쓰지만 SafetySecurity가 만든 작업이 아님. 진짜 작업은 이름이 `Logon`·`Daily`·`ServiceInstalled`·`Retry`·`Admin`·`ServiceInstalledAdmin` 중 하나이고, 동작이 하나뿐이며, 검사기 자신(실행 중인 exe나 설치 위치의 `SafetySecurity.exe`)을 그 작업의 `scan …` 인자 그대로 실행해요. 모르는 이름, 다른 프로그램, 다른 인자, 동작 추가, 하위 폴더는 모두 보고해요 | **높음** (서명된 프로그램이거나 작업이 꺼져 있어도) |
+| `TASK-004` | 진짜 SafetySecurity 작업이 꺼져 있음 (그 자동 검사가 돌지 않아요). 다시 켜는 것은 사용자가 직접 해요 | 보통 |
 
 ## 브라우저 (`Browser`)
 

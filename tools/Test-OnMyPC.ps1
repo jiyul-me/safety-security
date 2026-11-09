@@ -196,6 +196,25 @@ try {
     # 바로가기 대상 위장(보이는 대상과 실제 실행 대상이 다름)은 실제 PC에서는 거의 없어야 해요. 있으면 오탐인지 확인해 주세요.
     $disguised = @($real | Where-Object { @($_.reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -gt 0 })
     if ($disguised.Count -gt 0) { Note (Redact "바로가기 대상 위장으로 본 항목 $($disguised.Count)개: $(@($disguised.location) -join ', ')") }
+    # 설치된 SafetySecurity 작업(이름·실행 파일·인자가 설치가 만든 그대로인 것)을 위장 작업(TASK-003)으로 잘못 보면 안 돼요.
+    # (src/SafetySecurity.Core/Install/OwnTasks.cs의 이름·인자와 같아야 해요.)
+    $ownArgs = @{
+        'Logon' = 'scan --reason logon'; 'Daily' = 'scan --reason daily'; 'ServiceInstalled' = 'scan --reason service --quick'; 'Retry' = 'scan --reason retry'
+        'Admin' = 'scan --scope admin --reason retry'; 'ServiceInstalledAdmin' = 'scan --scope admin --reason service --quick'
+    }
+    $ownExes = @((Join-Path $env:LOCALAPPDATA 'Programs\SafetySecurity\SafetySecurity.exe'), (Join-Path $env:ProgramFiles 'SafetySecurity\SafetySecurity.exe'), $Exe)
+    $ownTasks = @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
+            $short = if ($_.TaskPath -eq '\SafetySecurity\') { $_.TaskName } elseif ($_.TaskPath -eq '\' -and $_.TaskName -like 'SafetySecurity-*') { $_.TaskName.Substring(15) } else { $null }
+            $actions = @($_.Actions)
+            $short -and $ownArgs.ContainsKey($short) -and $actions.Count -eq 1 -and ($ownExes -contains "$($actions[0].Execute)".Trim('"')) -and "$($actions[0].Arguments)" -eq $ownArgs[$short]
+        })
+    if ($ownTasks.Count -gt 0) {
+        $ownLocations = @($ownTasks | ForEach-Object { '작업 스케줄러' + $_.TaskPath + $_.TaskName })
+        $misflagged = @($rep.findings | Where-Object { $_.ruleId -eq 'TASK-003' -and $ownLocations -contains $_.location })
+        Check ($misflagged.Count -eq 0) "설치된 SafetySecurity 작업 $($ownTasks.Count)개를 위장 작업으로 잘못 보지 않음 $(@($misflagged.location) -join ', ')"
+    }
+    $selfFindings = @($rep.findings | Where-Object { $_.ruleId -eq 'TASK-003' -or $_.ruleId -eq 'TASK-004' })
+    if ($selfFindings.Count -gt 0) { Note (Redact "SafetySecurity 작업 확인: $(@($selfFindings | ForEach-Object { "$($_.ruleId) $($_.location)" }) -join ', ')") }
 
     if (-not $NonInteractive) {
         Say '  보고서를 열게요. 빨간 카드 2개가 가짜 항목이고, 나머지는 이 PC의 실제 항목이에요.'

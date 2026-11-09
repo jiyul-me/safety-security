@@ -78,6 +78,8 @@ $lnkTemp = Join-Path $startup 'ss-it-temp.lnk'
 $lnkIdList = Join-Path $startup 'ss-it-idlist.lnk'
 $lnkOk = Join-Path $startup 'ss-it-ok.lnk'
 $lnkCmd = Join-Path $startup 'ss-it-cmd.lnk'
+# SafetySecurity 이름을 흉내 낸 예약 작업 (루트의 예비 이름 꼴). 5년 뒤에만 실행되게 해서 실제로는 돌지 않아요.
+$fakeTaskName = 'SafetySecurity-ITFake'
 
 function New-Shortcut([string]$Path, [string]$Target, [string]$Arguments = '') {
     $shell = New-Object -ComObject WScript.Shell
@@ -163,6 +165,7 @@ try {
     Save-IdListOnlyShortcut $lnkTemp $lnkIdList
     New-Shortcut $lnkOk '%SystemRoot%\System32\whoami.exe'
     New-Shortcut $lnkCmd "$env:SystemRoot\System32\cmd.exe" "/c start `"`" `"$evilExe`""
+    Register-ScheduledTask -TaskName $fakeTaskName -TaskPath '\' -Action (New-ScheduledTaskAction -Execute $evilExe -Argument '-q') -Trigger (New-ScheduledTaskTrigger -Once -At (Get-Date).AddYears(5)) -Force | Out-Null
     $r1 = Scan
     Check ($r1.Code -eq 0) 'scan exits 0'
     $rep1 = Latest-Report
@@ -203,6 +206,13 @@ try {
     # 러너의 진짜 바로가기(시작 메뉴 등)를 대상 위장으로 잘못 보면 안 돼요.
     $disguised = @($rep1.findings | Where-Object { @($_.reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -gt 0 })
     Check ($disguised.Count -eq 0) "no real shortcut on the runner is flagged as disguised ($(@($disguised.location) -join ', '))"
+    # 이름만 SafetySecurity인 작업은 건너뛰지 않고 위장(TASK-003)으로 알려야 해요 (예전에는 이름만 보고 건너뛰었어요).
+    $fake = @($rep1.findings | Where-Object { $_.location -eq "작업 스케줄러\$fakeTaskName" })
+    Check ($fake.Count -eq 1 -and $fake[0].ruleId -eq 'TASK-003' -and $fake[0].severity -eq 'High') "task only named like SafetySecurity is TASK-003 High (got $(@($fake | ForEach-Object { "$($_.ruleId) $($_.severity)" }) -join ', '))"
+    if ($fake.Count -eq 1) {
+        Check ($fake[0].target -eq $evilExe) "look-alike task targets the program it runs (got $($fake[0].target))"
+    }
+    Unregister-ScheduledTask -TaskName $fakeTaskName -TaskPath '\' -Confirm:$false -ErrorAction SilentlyContinue
 
     Write-Host "== 4. second scan: same items are no longer new"
     $null = Scan
@@ -272,6 +282,20 @@ try {
         Check ($task.Settings.Priority -eq 7) "task priority 7 (got $($task.Settings.Priority))"
         Check ($task.Settings.ExecutionTimeLimit -eq 'PT15M') "task time limit 15 min (got $($task.Settings.ExecutionTimeLimit))"
         Check ($task.Principal.RunLevel -eq 'Limited') "task runs with least privilege (got $($task.Principal.RunLevel))"
+        # 진짜 작업은 schtasks가 돌려주는 XML 그대로 검사해도 우리 작업으로 알아봐야 해요 (이름이 아니라 실행 파일·인자로 확인).
+        $ownScan = Scan @('--quick')
+        Check ($ownScan.Code -eq 0) 'scan with our own tasks installed exits 0'
+        $repOwn = Latest-Report
+        $ownHits = @($repOwn.findings | Where-Object { $_.location -like '작업 스케줄러\SafetySecurity*' })
+        Check ($ownHits.Count -eq 0) "our own tasks are recognised and not reported ($(@($ownHits | ForEach-Object { "$($_.ruleId) $($_.location)" }) -join ', '))"
+        # 우리 작업을 끄면 자동 검사가 멈춘 것이라 보통(TASK-004)으로 알려야 해요. 시험이 끝나면 uninstall이 작업을 지워요.
+        $null = schtasks /change /tn '\SafetySecurity\Retry' /disable 2>&1
+        Check ($LASTEXITCODE -eq 0) 'test disabled \SafetySecurity\Retry'
+        $null = Scan @('--quick')
+        $repOff = Latest-Report
+        $off = @($repOff.findings | Where-Object { $_.location -eq '작업 스케줄러\SafetySecurity\Retry' })
+        Check ($off.Count -eq 1 -and $off[0].ruleId -eq 'TASK-004' -and $off[0].severity -eq 'Medium') "disabled own task is TASK-004 Medium (got $(@($off | ForEach-Object { "$($_.ruleId) $($_.severity)" }) -join ', '))"
+        $null = schtasks /change /tn '\SafetySecurity\Retry' /enable 2>&1
         $tn = Invoke-SS @('test-notify', '--data-dir', $data)
         if ($tn.Code -ne 0) { Write-Host "  (info) toast could not be shown on this runner: exit $($tn.Code)" -ForegroundColor Yellow }
         Check ($tn.Text -notmatch 'TypeInitialization|MissingMetadata|NotSupported|PlatformNotSupported|COMException.*0x80040154') 'toast code path does not crash (WinRT projection works under AOT)'
@@ -290,6 +314,7 @@ finally {
     Remove-ItemProperty -Path $runKey -Name $wrapName -ErrorAction SilentlyContinue
     Remove-ItemProperty -Path $runKey -Name $wrapOkName -ErrorAction SilentlyContinue
     Remove-Item -Force $lnkTemp, $lnkIdList, $lnkOk, $lnkCmd -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $fakeTaskName -TaskPath '\' -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force $evilDir -ErrorAction SilentlyContinue
 }
 

@@ -16,8 +16,6 @@ namespace SafetySecurity.Install;
 internal static class TaskInstaller
 {
     public const string ExeName = "SafetySecurity.exe";
-    private const string FallbackPrefix = @"\SafetySecurity-";
-    private static readonly string[] AllTaskNames = ["Logon", "Daily", "ServiceInstalled", "Retry", "Admin", "ServiceInstalledAdmin"];
 
     public static string UserInstallDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "SafetySecurity");
 
@@ -62,7 +60,7 @@ internal static class TaskInstaller
             if (!ok)
             {
                 failures++;
-                if (spec.Name == "ServiceInstalled")
+                if (spec.Name == OwnTasks.ServiceInstalled.Name)
                 {
                     serviceTaskOk = false;
                 }
@@ -101,9 +99,9 @@ internal static class TaskInstaller
     {
         var deleted = 0;
         var denied = 0;
-        foreach (var name in AllTaskNames)
+        foreach (var task in OwnTasks.All)
         {
-            foreach (var full in new[] { TaskXmlBuilder.Folder + name, FallbackPrefix + name })
+            foreach (var full in OwnTasks.FullNames(task.Name))
             {
                 if (!TaskExists(full))
                 {
@@ -161,7 +159,7 @@ internal static class TaskInstaller
     }
 
     public static List<string> ListInstalledTasks() =>
-        [.. AllTaskNames.SelectMany(n => new[] { TaskXmlBuilder.Folder + n, FallbackPrefix + n }).Where(TaskExists)];
+        [.. OwnTasks.All.SelectMany(t => OwnTasks.FullNames(t.Name)).Where(TaskExists)];
 
     private static bool CreateTask(TaskSpec spec, DataStore store, Output output)
     {
@@ -178,7 +176,7 @@ internal static class TaskInstaller
                 fs.Write(Encoding.Unicode.GetBytes(spec.Xml));
             }
 
-            foreach (var name in new[] { TaskXmlBuilder.Folder + spec.Name, FallbackPrefix + spec.Name })
+            foreach (var name in OwnTasks.FullNames(spec.Name))
             {
                 var r = Schtasks(["/create", "/tn", name, "/xml", xmlPath, "/f"]);
                 if (r?.ExitCode == 0)

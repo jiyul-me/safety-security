@@ -41,11 +41,11 @@ public sealed class ScanContext
 
     public IWmiSource? Wmi { get; init; }
 
-    /// <summary>검사기 자신의 파일 경로 (정규화됨). 자기 자신은 결과에서 빼요.</summary>
+    /// <summary>
+    /// 검사기 자신의 파일 경로 (정규화됨). 자기 자신은 결과에서 빼요. 어떤 경로를 넣는지는 <see cref="Install.SelfExecutables"/>가 정해요.
+    /// 예약 작업은 이름이 아니라 이 경로와 인자로 우리 작업인지 확인해요.
+    /// </summary>
     public IReadOnlySet<string> SelfPaths { get; init; } = new HashSet<string>();
-
-    /// <summary>검사기 자신의 예약 작업 이름 접두사.</summary>
-    public IReadOnlyList<string> SelfTaskPrefixes { get; init; } = [@"\SafetySecurity\", @"\SafetySecurity-"];
 
     public bool IsElevated { get; init; }
 

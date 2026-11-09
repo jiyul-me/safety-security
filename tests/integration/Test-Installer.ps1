@@ -175,11 +175,40 @@ function Assert-AdminData($L) {
     Check (Test-Path -LiteralPath (Join-Path $AdminData 'state.admin.json')) "admin scan state written to $AdminData"
     Check (@(Get-ChildItem -LiteralPath (Join-Path $AdminData 'reports') -Filter '*_admin.json' -ErrorAction SilentlyContinue).Count -ge 1) 'admin report written to the protected data folder'
     Check (@(Get-ChildItem -LiteralPath $AdminData -Filter 'task-*.xml' -ErrorAction SilentlyContinue).Count -eq 0) 'no temporary task XML left in the data folder'
+    # 숨겨진 작업 검사(TASK-002)는 이제 SafetySecurity 이름도 빼 주지 않아요. 설치가 만든 진짜 작업은 SD가 있어서 보고되면 안 돼요.
+    $adminReport = Get-ChildItem -LiteralPath (Join-Path $AdminData 'reports') -Filter '*_admin.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($adminReport) {
+        $rep = Get-Content -LiteralPath $adminReport.FullName -Raw -Encoding utf8 | ConvertFrom-Json
+        $own = @($rep.findings | Where-Object { $_.ruleId -eq 'TASK-002' -and "$($_.title)" -like '*\SafetySecurity*' })
+        Check ($own.Count -eq 0) "installed tasks are not reported as hidden tasks ($(@($own.title) -join ', '))"
+    }
     foreach ($item in @($AdminData, (Join-Path $AdminData 'reports'), (Join-Path $AdminData 'state.admin.json'))) {
         if (-not (Test-Path -LiteralPath $item)) { continue }
         $bad = @(Get-UserWriteRules $item)
         Check ($bad.Count -eq 0) "standard users cannot write or modify $item"
         $bad | ForEach-Object { Write-Host "        $($_.IdentityReference.Value): $($_.FileSystemRights)" }
+    }
+}
+
+# 설치된 exe로 검사해도 설치가 만든 작업을 우리 작업으로 알아봐야 해요 (이름이 아니라 실행 파일·인자로 확인해요).
+# 위장 작업(TASK-003)이나 꺼진 작업(TASK-004)으로 보고되면 안 돼요. 시험용 기록은 임시 폴더에 따로 둬요.
+function Assert-OwnTasksRecognised($L) {
+    if (-not (Test-Path -LiteralPath $L.Exe)) { return }
+    $name = if ($L.Admin) { 'admin' } else { 'user' }
+    $data = Join-Path $work "own-$name-data"
+    $reports = Join-Path $work "own-$name-reports"
+    Remove-Item -Recurse -Force $data, $reports -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $data, $reports | Out-Null
+    $out = Join-Path $work "own-$name.txt"
+    $p = Start-Process -FilePath $L.Exe -ArgumentList 'scan', '--quick', '--force', '--no-toast', '--data-dir', "`"$data`"", '--report-dir', "`"$reports`"" -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out
+    Write-Host "> SafetySecurity scan --quick --force --no-toast (own tasks, $name)  (exit $($p.ExitCode))"
+    Check ($p.ExitCode -eq 0) 'quick scan with the installed tasks exits 0'
+    $f = Get-ChildItem -LiteralPath $reports -Filter '*.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    Check ($null -ne $f) 'quick scan wrote a json report'
+    if ($f) {
+        $rep = Get-Content -LiteralPath $f.FullName -Raw -Encoding utf8 | ConvertFrom-Json
+        $own = @($rep.findings | Where-Object { "$($_.location)" -like '작업 스케줄러\SafetySecurity*' })
+        Check ($own.Count -eq 0) "installed tasks are recognised as our own ($(@($own | ForEach-Object { "$($_.ruleId) $($_.location)" }) -join ', '))"
     }
 }
 
@@ -232,6 +261,7 @@ function Test-Mode([bool]$Admin) {
     }
     Check ((Install-Setup $L "install-$($Admin)") -eq 0) 'Setup exits 0'
     Assert-Installed $L
+    Assert-OwnTasksRecognised $L
     if ($Admin) { Assert-AdminData $L }
 
     Write-Host "== Setup again over the existing install ($label)"

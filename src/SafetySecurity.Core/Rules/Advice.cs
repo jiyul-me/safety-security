@@ -1,3 +1,5 @@
+using SafetySecurity.Core.Model;
+
 namespace SafetySecurity.Core.Rules;
 
 /// <summary>보고서에 붙이는 '직접 확인하는 법'. 프로그램은 아무것도 자동으로 고치지 않아요.</summary>
@@ -27,6 +29,33 @@ public static class Advice
     public static string Task(string name) =>
         $"1) 작업 스케줄러(taskschd.msc)에서 '{name}' 작업의 동작 탭을 확인하세요. 2) {Common} "
         + $"3) 의심되면 schtasks /change /tn \"{name}\" /disable 로 먼저 꺼 두세요.";
+
+    /// <summary>SafetySecurity 이름을 흉내 낸 작업 (TASK-003).</summary>
+    public static string ImpersonatingTask(string name) =>
+        "SafetySecurity의 진짜 작업은 SafetySecurity.exe를 'scan …' 인자로 실행하는 동작 하나만 있어요. 그 밖의 작업은 SafetySecurity가 만든 게 아니에요. "
+        + $"1) 작업 스케줄러(taskschd.msc)에서 '{name}' 작업의 동작 탭을 확인하세요. 2) {Common} "
+        + $"3) 의심되면 schtasks /change /tn \"{name}\" /disable 로 먼저 꺼 두세요. "
+        + "4) SafetySecurity 설치 프로그램을 다시 실행하면 진짜 작업을 다시 등록해요 (zip으로 설치했다면 SafetySecurity.exe install).";
+
+    /// <summary>꺼져 있는 우리 작업 (TASK-004). 프로그램이 직접 켜지 않아요.</summary>
+    public static string DisabledOwnTask(string name) =>
+        $"1) 직접 끈 적이 있는지 떠올려 보세요. 2) 다시 켜려면 작업 스케줄러(taskschd.msc) → SafetySecurity에서 '{name}' 작업을 오른쪽 클릭해 '사용'을 누르거나, "
+        + $"명령 프롬프트에서 schtasks /change /tn \"{name}\" /enable 을 실행하세요 (Admin 작업은 관리자 권한이 필요해요). "
+        + "SafetySecurity 설치 프로그램을 다시 실행해도 다시 켜져요. 3) 직접 끈 적이 없다면 다른 프로그램이 검사를 막으려고 껐을 수 있어요. 다른 항목도 함께 확인해 보세요.";
+
+    /// <summary>
+    /// Windows 알림 설정이 꺼져 있을 때 보고서의 '확인하지 못한 것'에 넣을 안내예요. 켜져 있거나 알 수 없으면 null이에요.
+    /// </summary>
+    public static string? NotificationsOff(NotificationState state) => state switch
+    {
+        NotificationState.DisabledForApplication or NotificationState.DisabledByManifest =>
+            "Windows 설정에서 SafetySecurity 알림이 꺼져 있어서, 자동 검사가 새 항목을 찾아도 알려드릴 수 없어요. 설정 → 시스템 → 알림에서 SafetySecurity를 켜 주세요.",
+        NotificationState.DisabledForUser =>
+            "Windows 알림이 모두 꺼져 있어서, 자동 검사가 새 항목을 찾아도 알려드릴 수 없어요. 설정 → 시스템 → 알림에서 '알림'을 켜 주세요.",
+        NotificationState.DisabledByGroupPolicy =>
+            "회사·학교 정책으로 알림이 꺼져 있어서, 자동 검사가 새 항목을 찾아도 알려드릴 수 없어요. 가끔 시작 메뉴의 SafetySecurity로 직접 검사해서 보고서를 확인해 주세요.",
+        _ => null,
+    };
 
     public static string Browser =>
         "1) 브라우저 주소창에 chrome://policy 또는 edge://policy를 열어 정책이 어디서 왔는지 확인하세요. 회사·학교 PC가 아니라면 강제 설치 확장 프로그램은 대부분 악성이에요. "

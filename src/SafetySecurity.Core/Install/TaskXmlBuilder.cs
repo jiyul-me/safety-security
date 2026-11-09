@@ -13,7 +13,7 @@ public sealed record TaskSpec(string Name, string Xml);
 /// </summary>
 public static class TaskXmlBuilder
 {
-    public const string Folder = @"\SafetySecurity\";
+    public const string Folder = OwnTasks.Folder;
     private static readonly XNamespace Ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
 
     public const string ServiceInstalledQuery =
@@ -25,38 +25,38 @@ public static class TaskXmlBuilder
         var start = nowLocal.Date.AddHours(12).AddMinutes(37);
         return
         [
-            new TaskSpec("Logon", Build(
+            new TaskSpec(OwnTasks.Logon.Name, Build(
                 "로그온 3분 뒤 검사해요.",
                 [LogonTrigger(userName, "PT3M")],
-                exePath, "scan --reason logon", userSid, elevated: false)),
-            new TaskSpec("Daily", Build(
+                exePath, OwnTasks.Logon.Arguments, userSid, elevated: false)),
+            new TaskSpec(OwnTasks.Daily.Name, Build(
                 "하루 한 번 검사해요. PC가 꺼져 있었으면 켜진 뒤 검사해요.",
                 [DailyTrigger(start)],
-                exePath, "scan --reason daily", userSid, elevated: false)),
-            new TaskSpec("ServiceInstalled", Build(
+                exePath, OwnTasks.Daily.Arguments, userSid, elevated: false)),
+            new TaskSpec(OwnTasks.ServiceInstalled.Name, Build(
                 "새 서비스가 설치되면(System 로그 이벤트 7045) 서비스와 예약 작업만 빠르게 검사해요.",
                 [EventTrigger(ServiceInstalledQuery, "PT1M")],
-                exePath, "scan --reason service --quick", userSid, elevated: false)),
-            new TaskSpec("Retry", Build(
+                exePath, OwnTasks.ServiceInstalled.Arguments, userSid, elevated: false)),
+            new TaskSpec(OwnTasks.Retry.Name, Build(
                 "30분마다 깨어나서 게임 때문에 미뤄둔 검사가 있을 때만 검사해요. 없으면 바로 종료해요.",
                 [RepeatTrigger(nowLocal.AddMinutes(30), "PT30M")],
-                exePath, "scan --reason retry", userSid, elevated: false)),
+                exePath, OwnTasks.Retry.Arguments, userSid, elevated: false)),
         ];
     }
 
     /// <summary>관리자 작업 1개 (관리자만 읽을 수 있는 항목 확인).</summary>
     public static TaskSpec BuildAdminTask(string exePath, string userSid, string userName, DateTime nowLocal) =>
-        new("Admin", Build(
+        new(OwnTasks.Admin.Name, Build(
             "관리자만 읽을 수 있는 항목(Defender 제외 목록, 숨겨진 작업, WMI 구독)을 하루 한 번 검사해요. 게임 중이면 미뤄요.",
             [LogonTrigger(userName, "PT5M"), RepeatTrigger(nowLocal.AddMinutes(35), "PT30M")],
-            exePath, "scan --scope admin --reason retry", userSid, elevated: true));
+            exePath, OwnTasks.Admin.Arguments, userSid, elevated: true));
 
     /// <summary>관리자 설치 때, 사용자 작업이 이벤트 트리거를 못 받는 환경을 위한 예비 작업.</summary>
     public static TaskSpec BuildAdminServiceTask(string exePath, string userSid) =>
-        new("ServiceInstalledAdmin", Build(
+        new(OwnTasks.ServiceInstalledAdmin.Name, Build(
             "새 서비스가 설치되면 관리자 범위로 빠르게 검사해요.",
             [EventTrigger(ServiceInstalledQuery, "PT1M")],
-            exePath, "scan --scope admin --reason service --quick", userSid, elevated: true));
+            exePath, OwnTasks.ServiceInstalledAdmin.Arguments, userSid, elevated: true));
 
     public static string Build(string description, IReadOnlyList<XElement> triggers, string exePath, string arguments, string userSid, bool elevated)
     {
