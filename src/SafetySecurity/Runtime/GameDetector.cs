@@ -14,34 +14,39 @@ internal sealed unsafe class GameDetector(ScanConfig config)
 {
     private readonly HashSet<string> _games = new(config.GameProcesses, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>바쁘면 이유 문자열, 아니면 null.</summary>
-    public string? Check(bool includeCpu)
+    /// <summary>바쁘면 이유(종류와 문장), 아니면 null.</summary>
+    /// <param name="includeCpu">CPU 사용률도 볼지 (0.7초 걸려요).</param>
+    /// <param name="includeFullscreen">
+    /// 전체 화면도 볼지. 하루 넘게 밀린 검사는 전체 화면 앱(영상 등)이 있어도 백그라운드로 하니까 false로 불러요.
+    /// 게임 프로세스는 언제나 봐요.
+    /// </param>
+    public BusyReason? Check(bool includeCpu, bool includeFullscreen = true)
     {
-        if (config.DeferOnFullscreen)
+        if (config.DeferOnFullscreen && includeFullscreen)
         {
             if (SHQueryUserNotificationState(out var state) == 0)
             {
                 switch (state)
                 {
                     case QUNS_RUNNING_D3D_FULL_SCREEN:
-                        return "전체 화면 게임(D3D)이 실행 중";
+                        return new BusyReason(BusyKind.Fullscreen, "전체 화면 게임(D3D)이 실행 중");
                     case QUNS_BUSY:
-                        return "전체 화면 앱이 실행 중";
+                        return new BusyReason(BusyKind.Fullscreen, "전체 화면 앱이 실행 중");
                     case QUNS_PRESENTATION_MODE:
-                        return "발표 모드";
+                        return new BusyReason(BusyKind.Fullscreen, "발표 모드");
                 }
             }
 
             if (IsForegroundFullscreen())
             {
-                return "전체 화면 창이 맨 앞에 있음";
+                return new BusyReason(BusyKind.Fullscreen, "전체 화면 창이 맨 앞에 있음");
             }
         }
 
         var game = FindGameProcess();
         if (game is not null)
         {
-            return $"게임 프로세스 실행 중 ({game})";
+            return new BusyReason(BusyKind.GameProcess, $"게임 프로세스 실행 중 ({game})");
         }
 
         if (includeCpu && config.CpuBusyPercent is > 0 and < 100)
@@ -49,7 +54,7 @@ internal sealed unsafe class GameDetector(ScanConfig config)
             var cpu = MeasureCpuPercent(TimeSpan.FromMilliseconds(700));
             if (cpu > config.CpuBusyPercent)
             {
-                return $"CPU 사용률이 높음 ({cpu:0}%)";
+                return new BusyReason(BusyKind.Cpu, $"CPU 사용률이 높음 ({cpu:0}%)");
             }
         }
 

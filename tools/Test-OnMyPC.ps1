@@ -133,6 +133,8 @@ try {
     $script:results.Add("sha256 $hash")
     $v = Invoke-SS @('version')
     Check ($v.Code -eq 0 -and $v.Text -match 'SafetySecurity \d') "버전 확인: $($v.Text.Trim())"
+    $h = Invoke-SS @('--help')
+    Check ($h.Code -eq 0 -and $h.Text -match '사용법') '도움말 (--help는 검사를 시작하지 않고 도움말을 보여줘요)'
     $script:results.Add("windows $([Environment]::OSVersion.Version) admin=$isAdmin")
     $k = Invoke-SS @('verify', "$env:SystemRoot\System32\kernel32.dll")
     Check ($k.Code -eq 0) 'Windows 파일 서명 확인 (kernel32.dll = 유효)'
@@ -236,10 +238,13 @@ try {
         Pause-Step '게임을 켰으면 Enter'
         Say '  20초 뒤에 검사를 시도해요. 지금 게임 화면으로 돌아가세요...' 'Yellow'
         Start-Sleep -Seconds 20
-        $d = Invoke-SS @('scan', '--reason', 'daily', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+        # 2단계에서 방금 전체 검사를 해서, 같은 기록으로는 하루 한 번 검사가 '방금 검사함'으로 건너뛰어요. 그래서 빈 기록 폴더를 따로 써요.
+        $gameData = Join-Path $work 'data-game'
+        New-Item -ItemType Directory -Force $gameData | Out-Null
+        $d = Invoke-SS @('scan', '--reason', 'daily', '--no-toast', '--data-dir', $gameData, '--report-dir', $reports)
         Check ($d.Code -eq 2) "게임 중 검사 미룸 (종료 코드 $($d.Code)) $($d.Text.Trim())"
         Pause-Step '이제 게임을 완전히 끄고 Enter'
-        $r = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+        $r = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $gameData, '--report-dir', $reports)
         Check ($r.Code -eq 0) "게임을 끈 뒤 미뤄둔 검사 실행 (종료 코드 $($r.Code))"
         $vg = Get-Service -Name vgc -ErrorAction SilentlyContinue
         if ($vg) { Note "Riot Vanguard 서비스 상태: $($vg.Status)" }
@@ -268,7 +273,7 @@ try {
                 $ran = $after -gt $before -and $after.Year -gt 2000
             }
             Check $ran '서비스 설치 이벤트(7045)로 사용자 작업이 실행됨'
-            if (-not $ran) { Note '실패하면 관리자 설치(install --admin)의 예비 작업이 대신 이 역할을 해요. 이 결과를 이슈로 알려 주세요.' }
+            if (-not $ran) { Note '실패하면 관리자 권한으로 설치했을 때 만들어지는 예비 작업(ServiceInstalledAdmin)이 대신 서비스를 검사해요. 이 결과를 이슈로 알려 주세요.' }
         }
         finally {
             & sc.exe delete SafetySecurityProbe | Out-Null

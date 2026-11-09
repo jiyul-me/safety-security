@@ -27,19 +27,31 @@ public sealed class WmiScanner : IScanner
         var json = ctx.Wmi.GetConsumersJson(out var error);
         if (json is null)
         {
-            ctx.Coverage.Skipped("WMI 구독", error ?? "확인하지 못했어요.");
+            ctx.Coverage.Incomplete(CategoryName, "WMI 구독", error ?? "확인하지 못했어요.");
             return [];
         }
 
-        return Analyze(json);
+        if (!TryAnalyze(json, out var findings))
+        {
+            ctx.Coverage.Incomplete(CategoryName, "WMI 구독", "조회 결과를 읽지 못했어요.");
+        }
+
+        return findings;
     }
 
     public static List<Finding> Analyze(string json)
     {
-        var findings = new List<Finding>();
+        TryAnalyze(json, out var findings);
+        return findings;
+    }
+
+    /// <summary>조회 결과(JSON)를 분석해요. 결과가 깨져서 읽지 못했으면 false (빈 결과는 구독이 없는 거라 true).</summary>
+    public static bool TryAnalyze(string json, out List<Finding> findings)
+    {
+        findings = [];
         if (string.IsNullOrWhiteSpace(json))
         {
-            return findings;
+            return true;
         }
 
         JsonDocument doc;
@@ -49,7 +61,7 @@ public sealed class WmiScanner : IScanner
         }
         catch (JsonException)
         {
-            return findings;
+            return false;
         }
 
         using (doc)
@@ -92,7 +104,7 @@ public sealed class WmiScanner : IScanner
             }
         }
 
-        return findings;
+        return true;
     }
 
     private static string? Str(JsonElement e, string name) =>

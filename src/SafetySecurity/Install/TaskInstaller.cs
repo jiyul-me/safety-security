@@ -27,6 +27,15 @@ internal static class TaskInstaller
 
     public static int Install(bool admin, DataStore store, Output output)
     {
+        if (admin && InstalledBySetup() && RunsFromLocalAppData())
+        {
+            // 설치 프로그램으로 '내 계정에만' 설치했는데 install --admin을 직접 실행했어요. 여기서 Program Files에 복사하고
+            // 관리자 작업을 만들면, 설치 프로그램이 모르는 파일과 작업이라 앱 목록에서 제거해도 남아요. 그래서 아무것도 하지 않아요.
+            output.Line("설치 프로그램으로 '내 계정에만' 설치한 SafetySecurity예요. 관리자 검사를 쓰려면 설정 → 앱에서 SafetySecurity를 제거한 뒤, 설치 프로그램을 다시 실행해 '관리자 권한으로 설치'를 골라 주세요.");
+            output.Line("아무것도 바꾸지 않았어요.");
+            return 1;
+        }
+
         var elevated = Environment.IsPrivilegedProcess;
         if (admin && !elevated)
         {
@@ -80,7 +89,8 @@ internal static class TaskInstaller
         if (failures == 0)
         {
             output.Line("설치 완료! 평소엔 꺼져 있고, 로그온·하루 한 번·서비스 설치 때만 잠깐 검사해요.");
-            output.Line("지금 바로 검사하려면: " + target + " scan");
+            // 인자 없이 실행하면 더블클릭처럼 지금 검사하고 보고서를 열어요 (Win+R·바로가기에서도 결과가 보여요).
+            output.Line("지금 바로 검사하려면 시작 메뉴·바탕화면의 SafetySecurity를 누르거나 이 파일을 실행하세요: " + target);
         }
         else
         {
@@ -205,6 +215,21 @@ internal static class TaskInstaller
                 // 임시 XML을 못 지워도 설치에는 영향이 없어요 (자기 데이터 폴더 안의 파일이에요).
             }
         }
+    }
+
+    /// <summary>
+    /// 지금 실행 중인 exe가 %LOCALAPPDATA% 안(설치 프로그램의 '내 계정에만' 설치 위치: %LOCALAPPDATA%\Programs\SafetySecurity)에 있는지.
+    /// 관리자 설치는 Program Files에 있어서 여기에 해당하지 않아요.
+    /// </summary>
+    private static bool RunsFromLocalAppData()
+    {
+        if (Environment.ProcessPath is not { } exe)
+        {
+            return false;
+        }
+
+        var local = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)).TrimEnd('\\') + "\\";
+        return local.Length > 1 && Path.GetFullPath(exe).StartsWith(local, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Inno Setup 설치 프로그램은 exe 옆에 제거 프로그램(unins000.exe)을 둬요.</summary>

@@ -58,16 +58,49 @@ public sealed class HostsScanner : IScanner
 
     public bool RunsIn(ScanScope scope, bool quick) => scope == ScanScope.User && !quick;
 
+    /// <summary>한 번에 읽는 크기. 광고 차단 목록을 넣은 큰 hosts 파일도 보통 이보다 작아요.</summary>
+    public const int MaxBytes = 4 * 1024 * 1024;
+
     public IEnumerable<Finding> Scan(ScanContext ctx)
     {
         var path = ctx.Paths.System32 + @"\drivers\etc\hosts";
-        var bytes = ctx.Files.ReadAll(path, 4 * 1024 * 1024);
-        if (bytes is null)
+        var bytes = ctx.Files.ReadAll(path, MaxBytes);
+        if (bytes is not null)
         {
+            return Analyze(Encoding.UTF8.GetString(bytes), path);
+        }
+
+        if (!ctx.Files.FileExists(path))
+        {
+            // hosts 파일이 없으면 바뀐 주소도 없어요 (끝까지 확인한 거예요).
             return [];
         }
 
-        return Analyze(Encoding.UTF8.GetString(bytes), path);
+        // 너무 크면 앞부분만 확인해요. 읽은 만큼은 검사하되, 뒤쪽에 나쁜 줄이 있을 수 있어서 '일부만 확인'으로 남겨요.
+        // (파일을 일부러 크게 부풀려 검사를 피하는 경우도 있어요.)
+        var prefix = ctx.Files.ReadPrefix(path, MaxBytes);
+        if (prefix is null)
+        {
+            ctx.Coverage.Incomplete(CategoryName, "hosts 파일", "파일을 읽지 못했어요 (잠겨 있거나 권한이 없어요).");
+            return [];
+        }
+
+        var text = Encoding.UTF8.GetString(prefix);
+        if (prefix.Length < MaxBytes)
+        {
+            // 앞부분 읽기가 파일 끝까지 읽었어요 (처음 읽을 때만 잠깐 잠겨 있었어요). 끝까지 확인한 거예요.
+            return Analyze(text, path);
+        }
+
+        var lastLine = text.LastIndexOf('\n');
+        if (lastLine >= 0)
+        {
+            // 잘린 마지막 줄은 버려요 (반쪽 주소를 잘못 읽지 않게).
+            text = text[..lastLine];
+        }
+
+        ctx.Coverage.Incomplete(CategoryName, "hosts 파일", $"파일이 {MaxBytes / (1024 * 1024)}MB보다 커서 앞부분만 확인했어요. 메모장으로 열어 뒤쪽에 낯선 줄이 있는지 확인해 보세요.");
+        return Analyze(text, path);
     }
 
     public static List<Finding> Analyze(string content, string path)

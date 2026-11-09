@@ -37,7 +37,8 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
   SafetySecurity.exe ignored              숨긴 항목 목록 (ID, 제목, 숨긴 날)
   SafetySecurity.exe verify <파일>        파일 하나의 디지털 서명 확인
   SafetySecurity.exe test-notify          알림이 뜨는지 시험
-  SafetySecurity.exe version
+  SafetySecurity.exe version              버전 (--version도 돼요)
+  SafetySecurity.exe help                 이 도움말 (--help, -h, /?도 돼요)
 
 공통 옵션:  --data-dir <폴더>  상태·보고서 폴더 (기본: %LOCALAPPDATA%\SafetySecurity,
                               관리자 권한이면 C:\Program Files\SafetySecurity\data)
@@ -54,8 +55,10 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
         output.Quiet = list.RemoveAll(a => a.Equals("--quiet", StringComparison.OrdinalIgnoreCase)) > 0;
         var dataDir = TakeValue(list, "--data-dir");
         var store = new DataStore(dataDir);
-        var command = list.Count > 0 && !list[0].StartsWith('-') ? list[0].ToLowerInvariant() : "manual";
-        if (list.Count > 0 && command == list[0].ToLowerInvariant())
+        // 인자가 하나도 없을 때만(더블클릭·시작 메뉴·바탕화면) 바로 검사해요. 첫 인자는 항상 명령으로 봐서,
+        // --help·--version은 도움말·버전을 보여주고, 모르는 옵션(오타 등)은 검사를 시작하지 않고 도움말을 보여줘요.
+        var command = list.Count > 0 ? list[0].ToLowerInvariant() : "manual";
+        if (list.Count > 0)
         {
             list.RemoveAt(0);
         }
@@ -75,8 +78,9 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
                     // 더블클릭·시작 메뉴: 지금 검사하고 보고서 열기. 검사하는 동안 알림으로 진행 중임을 보여줘요.
                     var options = new ScanOptions { Reason = ScanReason.Manual, Force = true, Open = true, NoToast = true, ProgressToast = !output.HasConsole };
                     var code = ScanCommand.Run(options, store, output);
-                    if (code == ExitCodes.AlreadyRunning)
+                    if (code != ExitCodes.Ok)
                     {
+                        // 보고서가 열리지 않는 모든 경우(이미 검사 중, 너무 오래 걸려 멈춤, 오류)에 이유를 보여줘요.
                         output.ShowIfNoConsole("SafetySecurity");
                     }
 
@@ -87,7 +91,21 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
                 {
                     var o = ParseScan(list);
                     output.Quiet |= o.Reason != ScanReason.Manual && !output.HasConsole;
-                    return ScanCommand.Run(o, store, output);
+                    if (o.Reason == ScanReason.Manual && !output.HasConsole && !output.Quiet)
+                    {
+                        // Win+R·바로가기로 'scan'을 실행했어요. 더블클릭처럼 검사 중 알림을 띄우고, 끝나면 보고서를 열어요.
+                        o.ProgressToast = !o.NoToast;
+                        o.Open = true;
+                    }
+
+                    var code = ScanCommand.Run(o, store, output);
+                    if (code != ExitCodes.Ok)
+                    {
+                        // 미룸·이미 검사 중·멈춤·오류도 콘솔 없이 실행했으면 메시지 창으로 알려요 (작업 스케줄러 검사는 --quiet처럼 조용해요).
+                        output.ShowIfNoConsole("SafetySecurity");
+                    }
+
+                    return code;
                 }
 
                 case "install":
@@ -187,6 +205,7 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
 
                 case "version":
                 case "--version":
+                case "-v":
                     output.Line("SafetySecurity " + Version);
                     output.ShowIfNoConsole("SafetySecurity");
                     return 0;
@@ -194,7 +213,9 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
                 case "help":
                 case "--help":
                 case "-h":
+                case "-?":
                 case "/?":
+                case "/h":
                     output.Line(Help);
                     output.ShowIfNoConsole("SafetySecurity 도움말");
                     return 0;
@@ -463,7 +484,7 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
     {
         if (!TaskInstaller.AdminInstallExists())
         {
-            output.Line("관리자 설치가 없어서 관리자 검사 무시 목록도 없어요. 관리자 설치(install --admin)를 한 뒤에 다시 해 주세요.");
+            output.Line("관리자 설치가 없어서 관리자 검사 무시 목록도 없어요. 설치할 때 '관리자 권한으로'를 고르면 관리자 검사가 생겨요.");
             return 1;
         }
 
@@ -508,6 +529,10 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
             if (s.Pending is { } p)
             {
                 output.Line($"  미뤄둔 검사: {p.Reason}{(p.Quick ? " (빠른 검사)" : string.Empty)} — {p.DeferredBecause} ({p.Attempts}번 미룸)");
+                if (ScanSchedule.OverdueText(p, DateTimeOffset.UtcNow) is { } overdue)
+                {
+                    output.Line("  " + overdue);
+                }
             }
 
             output.Line($"  숨긴 항목: {s.Ignored.Count}개 (목록: ignored), 베이스라인: {s.Baseline.Count}개");

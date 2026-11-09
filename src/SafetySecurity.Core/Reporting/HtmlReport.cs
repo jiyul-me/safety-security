@@ -247,7 +247,7 @@ public static class HtmlReport
                     {
                         sb.Append("\\x").Append(((int)c).ToString("X2", CultureInfo.InvariantCulture));
                     }
-                    else if (c is '‮' or '‭' or '‪' or '‫' or '‬' or '⁦' or '⁧' or '⁨' or '⁩')
+                    else if (DisplayText.IsBidiControl(c))
                     {
                         // 오른쪽→왼쪽 문자로 확장자를 숨기는 수법 (예: "invoice‮fdp.exe") 표시
                         sb.Append("[U+").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture)).Append(']');

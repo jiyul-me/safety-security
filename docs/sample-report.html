@@ -20,6 +20,7 @@ main{max-width:980px;margin:0 auto;padding:24px 16px 64px}h1{font-size:24px;marg
 .cat{color:var(--muted);font-size:13px}dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:6px 0}dt{color:var(--muted)}dd{margin:0;min-width:0;word-break:break-all}
 code{background:var(--code);border-radius:4px;padding:1px 5px;font:13px/1.5 Consolas,"D2Coding",monospace;word-break:break-all}
 ul{margin:4px 0;padding-left:20px}details{margin-top:10px}summary{cursor:pointer;color:var(--muted)}.advice{margin:4px 0}.ignore{color:var(--muted);font-size:13px}
+.change{color:var(--new);margin:4px 0 8px}.hidden li{margin:6px 0;word-break:break-all}
 kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font:12px/1.5 Consolas,"D2Coding",monospace;background:var(--card)}
 .empty{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}.footer{margin-top:28px;color:var(--muted)}
 @media (max-width:600px){.summary{grid-template-columns:repeat(2,1fr)}dl{grid-template-columns:1fr}}</style>
@@ -60,7 +61,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 <h4>왜 의심스러운가요?</h4><ul><li>서비스 경로에 공백이 있는데 따옴표가 없어요 (C:\Program Files\Some Vendor\agent.exe). 권한 상승에 악용될 수 있는 설정이에요.</li></ul>
 <p class="ignore">직접 확인해서 괜찮은 항목이면 다음 검사부터 숨길 수 있어요: <kbd>Win</kbd>+<kbd>R</kbd>을 누르고 <code>safetysecurity ignore 0e6b93d4f1a2c758</code>를 입력하세요.</p>
 </article>
-<section class="footer"><h2>검사 범위</h2><ul><li>COM 하이재킹 (HKCU CLSID)</li><li>자동 실행 (Run 키, 시작프로그램, Winlogon, IFEO)</li><li>서비스·드라이버</li><li>예약 작업</li><li>브라우저 정책·바로가기·프록시</li><li>Microsoft Defender 설정</li><li>hosts 파일</li><li>사용자 폴더의 새 실행 파일</li></ul><h2>확인하지 못한 것</h2><ul><li>Defender 로컬 제외 목록: 관리자만 읽을 수 있어요. &#39;install --admin&#39;으로 관리자 작업을 추가하면 확인해요.</li></ul></section>
+<section class="footer"><h2>검사 범위</h2><ul><li>COM 하이재킹 (HKCU CLSID)</li><li>자동 실행 (Run 키, 시작프로그램, Winlogon, IFEO)</li><li>서비스·드라이버</li><li>예약 작업</li><li>브라우저 정책·바로가기·프록시</li><li>Microsoft Defender 설정</li><li>hosts 파일</li><li>사용자 폴더의 새 실행 파일</li></ul><h2>확인하지 못한 것</h2><ul><li>Defender 로컬 제외 목록: 관리자만 읽을 수 있어요. 설치할 때 &#39;관리자 권한으로&#39;를 고르면 확인해요.</li></ul></section>
 </main>
 </body>
 </html>

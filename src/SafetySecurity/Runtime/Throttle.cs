@@ -31,8 +31,14 @@ internal static class Throttle
 /// 스캐너가 Step()을 부를 때마다 무게를 세서, 일정량마다 잠깐 쉬고 게임 시작 여부를 다시 봐요.
 /// 시간 제한(작업 스케줄러 15분 제한보다 짧게)도 여기서 지켜요.
 /// </summary>
-internal sealed class Pacer(GameDetector? detector, TimeSpan budget) : IScanPacer
+/// <param name="detector">게임·전체 화면을 볼 감지기. null이면 보지 않아요 (사용자가 직접 시작한 검사).</param>
+/// <param name="budget">시간 제한.</param>
+/// <param name="gamesOnly">true면 게임 프로세스가 시작될 때만 멈춰요 (하루 넘게 밀린 검사: 전체 화면 앱이 있어도 계속해요).</param>
+internal sealed class Pacer(GameDetector? detector, TimeSpan budget, bool gamesOnly = false) : IScanPacer
 {
+    /// <summary>시간 제한으로 멈췄을 때의 이유 문장.</summary>
+    public const string TimeLimitReason = "시간 제한을 넘음";
+
     private const int SleepEvery = 40;
     private const int SleepMs = 8;
     private const int RecheckEvery = 400;
@@ -55,12 +61,12 @@ internal sealed class Pacer(GameDetector? detector, TimeSpan budget) : IScanPace
             _nextCheck = _weight + RecheckEvery;
             if (_clock.Elapsed > budget)
             {
-                throw new ScanAbortedException("시간 제한을 넘음");
+                throw new ScanAbortedException(TimeLimitReason);
             }
 
-            if (detector?.Check(includeCpu: false) is { } reason)
+            if (detector?.Check(includeCpu: false, includeFullscreen: !gamesOnly) is { } reason)
             {
-                throw new ScanAbortedException(reason);
+                throw new ScanAbortedException(reason.Text);
             }
         }
     }

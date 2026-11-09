@@ -22,6 +22,13 @@ public sealed class ScanState
 
     public bool BaselineInitialized { get; set; }
 
+    /// <summary>
+    /// 한 번이라도 끝까지 검사해서 베이스라인이 의미 있는 분류. 여기 없는 분류(예: 관리자 범위가 처음 검사한 서비스, 새 버전에 생긴 분류)는
+    /// 첫 검사처럼 '높음'만 알려요. 그래야 처음 보는 분류의 기존 항목이 한꺼번에 '새 항목' 알림으로 쏟아지지 않아요.
+    /// null이면 이 칸이 없던 예전 기록이라 <see cref="BaselineEvaluator"/>가 그 범위의 전체 검사 분류로 채워요.
+    /// </summary>
+    public HashSet<string>? InitializedCategories { get; set; }
+
     /// <summary>지난 검사에서 본 항목 ID → 분류.</summary>
     public Dictionary<string, string> Baseline { get; set; } = [];
 
@@ -82,6 +89,18 @@ public sealed class PendingScan
     public string? DeferredBecause { get; set; }
 
     public int Attempts { get; set; }
+
+    /// <summary>
+    /// 마지막으로 검사를 요청(미룸·다른 검사와 겹침)한 시각. 검사가 끝나며 기록을 저장할 때, 그 검사가 시작된 뒤에 다른 검사가 남긴
+    /// 요청을 지우지 않으려고 써요. 예전 기록에는 없어서 null일 수 있어요.
+    /// </summary>
+    public DateTimeOffset? RequestedUtc { get; set; }
+
+    /// <summary>하루 넘게 밀려서 바빠도 백그라운드로 검사를 시작한 마지막 시각 (<see cref="ScanSchedule"/>).</summary>
+    public DateTimeOffset? OverdueRunUtc { get; set; }
+
+    /// <summary>게임 때문에 하루 넘게 밀렸다고 알림으로 알려 드린 시각. 미뤄둔 검사 하나에 한 번만 알려요.</summary>
+    public DateTimeOffset? OverdueNoticeUtc { get; set; }
 }
 
 /// <summary>사용자 설정 (config.json, 없으면 기본값).</summary>

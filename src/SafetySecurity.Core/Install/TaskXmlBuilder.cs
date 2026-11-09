@@ -54,7 +54,7 @@ public static class TaskXmlBuilder
     /// <summary>관리자 설치 때, 사용자 작업이 이벤트 트리거를 못 받는 환경을 위한 예비 작업.</summary>
     public static TaskSpec BuildAdminServiceTask(string exePath, string userSid) =>
         new(OwnTasks.ServiceInstalledAdmin.Name, Build(
-            "새 서비스가 설치되면 관리자 범위로 빠르게 검사해요.",
+            "새 서비스가 설치되면(System 로그 이벤트 7045) 서비스와 숨겨진 예약 작업만 관리자 권한으로 빠르게 검사해요. 사용자 작업이 이 이벤트를 받지 못할 때의 예비 작업이에요.",
             [EventTrigger(ServiceInstalledQuery, "PT1M")],
             exePath, OwnTasks.ServiceInstalledAdmin.Arguments, userSid, elevated: true));
 

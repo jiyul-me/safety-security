@@ -48,6 +48,18 @@ function Scan([string[]]$Extra = @()) {
     return Invoke-SS (@('scan', '--force', '--no-toast', '--data-dir', $data, '--report-dir', $reports) + $Extra)
 }
 
+# state.json의 시각 칸 하나를 바꿔요 (예: 마지막 전체 검사를 3시간 전으로). JSON 전체를 다시 쓰지 않고 그 값만 바꿔요.
+function Set-StateTime([string]$Field, [datetime]$Utc) {
+    $path = Join-Path $data 'state.json'
+    $raw = [IO.File]::ReadAllText($path)
+    $value = $Utc.ToString('yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture) + '+00:00'
+    $new = [regex]::Replace($raw, '("' + $Field + '"\s*:\s*)"[^"]*"', ('${1}"' + $value + '"'))
+    if ($new -eq $raw) { throw "state.json has no $Field to change" }
+    [IO.File]::WriteAllText($path, $new, (New-Object Text.UTF8Encoding $false))
+}
+
+function Read-State { return Get-Content (Join-Path $data 'state.json') -Raw -Encoding utf8 | ConvertFrom-Json }
+
 # ---- fake persistence -------------------------------------------------------
 $evilDir = Join-Path $env:LOCALAPPDATA 'Temp\ss-it-evil'
 New-Item -ItemType Directory -Force $evilDir | Out-Null
@@ -122,6 +134,27 @@ try {
     Write-Host "== 1. version / verify"
     $v = Invoke-SS @('version')
     Check ($v.Code -eq 0 -and $v.Text -match 'SafetySecurity \d') 'version prints'
+    # --version·--help는 예전에 '-'로 시작해서 명령으로 안 보고 바로 검사(보고서 열기)를 시작했어요.
+    $flagData = Join-Path $work 'flag-data'
+    $vv = Invoke-SS @('--version', '--data-dir', $flagData)
+    Check ($vv.Code -eq 0 -and $vv.Text -match 'SafetySecurity \d') '--version prints the version'
+    foreach ($h in '--help', '-h', '/?') {
+        $hh = Invoke-SS @($h, '--data-dir', $flagData)
+        Check ($hh.Code -eq 0 -and "$($hh.Text)".Contains('사용법')) "$h prints help"
+    }
+    $bogusFlag = Invoke-SS @('--frobnicate', '--data-dir', $flagData)
+    Check ($bogusFlag.Code -eq 1 -and "$($bogusFlag.Text)".Contains('알 수 없는 명령')) 'an unknown leading option shows help instead of scanning'
+    Check (-not (Test-Path (Join-Path $flagData 'reports')) -and -not (Test-Path (Join-Path $flagData 'state.json'))) 'help, version and unknown options do not scan'
+
+    # 사용자의 cmd 창에 붙어서 출력해도 그 창의 코드 페이지를 바꾸면 안 돼요 (예전에는 65001(UTF-8)로 바꿔 놓고 끝났어요).
+    # 진짜 콘솔이 있어야 해서 숨긴 cmd 창에서 실행하고, 끝난 뒤 chcp 결과를 파일로 받아요.
+    # --quiet: 콘솔에 붙고 출력 인코딩을 정하는 것까지는 똑같이 하지만, 혹시 콘솔에 못 붙어도 메시지 창을 띄워 멈추지 않아요.
+    $cpOut = Join-Path $work 'chcp.txt'
+    $cpLine = '/d /c chcp 437 >nul & start "" /wait "' + $Exe + '" version --quiet --data-dir "' + $flagData + '" & chcp > "' + $cpOut + '"'
+    $null = Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList $cpLine -Wait -PassThru -WindowStyle Hidden
+    $cpText = if (Test-Path $cpOut) { [IO.File]::ReadAllText($cpOut) } else { '' }
+    if ($cpText -match '(\d{3,5})') { Check ($Matches[1] -eq '437') "console code page is left as it was after the exe ran in it (got $($Matches[1]))" }
+    else { Write-Host "  (info) could not read the console code page on this runner: '$cpText'" -ForegroundColor Yellow }
     $sys = Invoke-SS @('verify', "$env:SystemRoot\System32\kernel32.dll")
     Check ($sys.Code -eq 0 -and $sys.Text -match '^Valid\|') 'kernel32.dll is signed (catalog or embedded)'
     $np = Invoke-SS @('verify', "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe")
@@ -258,15 +291,32 @@ try {
     $rep5 = Latest-Report
     Check (@($rep5.findings | Where-Object { $_.id -eq $com2[0].id }).Count -eq 0) 'item hidden again with its new state'
 
+    Write-Host "== 5c. no second full scan right after one"
+    # 로그온·하루 한 번 검사는 방금(2시간 안) 전체 검사를 끝냈으면 같은 검사를 또 하지 않아요.
+    $before = @(Get-ChildItem $reports -Filter *.json).Count
+    $lg = Invoke-SS @('scan', '--reason', 'logon', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+    $after = @(Get-ChildItem $reports -Filter *.json).Count
+    Check ($lg.Code -eq 0 -and $after -eq $before -and $lg.Ms -lt 5000) "logon scan right after a full scan is skipped (exit $($lg.Code), reports $before -> $after, $([int]$lg.Ms) ms)"
+
     Write-Host "== 6. game deferral and retry"
+    # 마지막 전체 검사를 3시간 전으로 돌려서, 하루 한 번 검사가 '방금 검사함'으로 건너뛰지 않게 해요.
+    Set-StateTime 'lastFullScanUtc' ((Get-Date).ToUniversalTime().AddHours(-3))
     $cfg = @{ gameProcesses = @('pwsh.exe', 'powershell.exe'); notifyMinSeverity = 'Medium'; cpuBusyPercent = 0; deferOnFullscreen = $false } | ConvertTo-Json
     Set-Content -Path (Join-Path $data 'config.json') -Value $cfg -Encoding utf8
     $d = Invoke-SS @('scan', '--reason', 'daily', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
     Check ($d.Code -eq 2) "scan deferred while game process runs (exit $($d.Code))"
-    $state = Get-Content (Join-Path $data 'state.json') -Raw -Encoding utf8 | ConvertFrom-Json
+    $state = Read-State
     Check ($null -ne $state.pending -and $state.pending.reason -eq 'Daily') 'pending scan recorded'
     $d2 = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
     Check ($d2.Code -eq 2) 'retry still deferred'
+    # 하루 넘게 밀려도 게임 프로세스가 실행 중이면 절대 검사하지 않아요 (대신 한 번만 알려요. 여기서는 --no-toast라 기록만 남아요).
+    Set-StateTime 'sinceUtc' ((Get-Date).ToUniversalTime().AddHours(-30))
+    $d2b = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+    $stateOver = Read-State
+    Check ($d2b.Code -eq 2) "overdue scan still waits while a game process runs (exit $($d2b.Code))"
+    Check ($null -ne $stateOver.pending -and $null -ne $stateOver.pending.overdueNoticeUtc) 'overdue warning recorded once'
+    $st6 = Invoke-SS @('status', '--data-dir', $data)
+    Check ("$($st6.Text)" -match '시간째 밀려') 'status says the scan is overdue'
     $cfg2 = @{ gameProcesses = @(); cpuBusyPercent = 0; deferOnFullscreen = $false } | ConvertTo-Json
     Set-Content -Path (Join-Path $data 'config.json') -Value $cfg2 -Encoding utf8
     $d3 = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
@@ -275,6 +325,25 @@ try {
     Check ($null -eq $state2.pending) 'pending cleared'
     $idle = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
     Check ($idle.Code -eq 0 -and $idle.Ms -lt 3000) "retry with nothing pending exits fast ($([int]$idle.Ms) ms)"
+
+    Write-Host "== 6b. a scan that overlaps another one is kept for later"
+    # 전체 검사가 도는 동안 새 서비스 검사가 오면 버리지 않고 미뤄둔 빠른 검사로 남겨야 해요 (Retry가 해요).
+    $holdOut = Join-Path $work 'hold-out.txt'
+    $holder = Start-Process -FilePath $Exe -ArgumentList @('scan', '--force', '--no-toast', '--data-dir', ('"' + $data + '"'), '--report-dir', ('"' + $reports + '"')) -PassThru -NoNewWindow -RedirectStandardOutput $holdOut
+    $null = $holder.Handle  # 끝난 뒤에도 종료 코드를 읽을 수 있게 핸들을 잡아 둬요 (PowerShell의 알려진 문제).
+    Start-Sleep -Milliseconds 700
+    $svc = Invoke-SS @('scan', '--reason', 'service', '--quick', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+    $holder.WaitForExit()
+    if ($svc.Code -eq 2) {
+        $stateHold = Read-State
+        Check ($holder.ExitCode -eq 0) "the running full scan finished (exit $($holder.ExitCode))"
+        Check ($null -ne $stateHold.pending -and $stateHold.pending.quick -eq $true) 'the overlapping service scan is kept as a pending quick scan after the full scan saved'
+        $rr = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+        Check ($rr.Code -eq 0 -and $null -eq (Read-State).pending) 'retry runs the kept quick scan'
+    }
+    else {
+        Write-Host "  (info) the full scan finished before the service scan started (exit $($svc.Code)); overlap check skipped" -ForegroundColor Yellow
+    }
 
     Write-Host "== 7. quick scan (service event)"
     $q = Invoke-SS @('scan', '--reason', 'service', '--quick', '--force', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
@@ -289,6 +358,10 @@ try {
     $wmiNote = @($repa.coverage | Where-Object { "$_" -like 'WMI*' })
     # PowerShell을 최소 환경(물려받지 않은 환경 변수)으로 실행해도 WMI 조회가 돼야 해요.
     Check ($wmiNote.Count -eq 0) "WMI subscriptions queried with the minimal child environment $($wmiNote -join ' ')"
+    $aq = Invoke-SS @('scan', '--scope', 'admin', '--reason', 'service', '--quick', '--force', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+    $repaq = Latest-Report
+    # 관리자 설치의 예비 작업(ServiceInstalledAdmin)이 하는 검사: 서비스를 정말 검사해야 해요.
+    Check ($aq.Code -eq 0 -and $repaq.quick -eq $true -and @($repaq.completed) -contains '서비스·드라이버') "admin quick scan checks services ($(@($repaq.completed) -join ', '))"
     $aid = 'feedc0de12345678'
     $ia = Invoke-SS @('ignore', $aid, '--scope', 'admin', '--data-dir', $data)
     $adminState = Get-Content (Join-Path $data 'state.admin.json') -Raw -Encoding utf8 | ConvertFrom-Json

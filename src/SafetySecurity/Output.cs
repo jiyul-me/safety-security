@@ -13,12 +13,16 @@ internal sealed class Output
 
     public Output()
     {
-        HasConsole = OutputGoesToFileOrPipe() || NativeMethods.AttachConsole(NativeMethods.ATTACH_PARENT_PROCESS);
+        var redirected = OutputGoesToFileOrPipe();
+        HasConsole = redirected || NativeMethods.AttachConsole(NativeMethods.ATTACH_PARENT_PROCESS);
         if (HasConsole)
         {
             try
             {
-                Console.OutputEncoding = Encoding.UTF8;
+                // 파일·파이프로 보낼 때는 UTF-8로 써요 (스크립트·CI가 UTF-8로 읽어요). 이때는 붙은 콘솔이 없어서 콘솔 설정은 그대로예요.
+                // 사용자의 cmd·PowerShell 창에 붙었을 때는 UTF-16(WriteConsoleW)으로 써요. 그러면 창의 코드 페이지를
+                // 바꾸지 않아도(SetConsoleOutputCP를 부르지 않아요) 한글이 깨지지 않고, 끝난 뒤에도 그 창의 코드 페이지(예: 949)가 그대로예요.
+                Console.OutputEncoding = redirected ? Encoding.UTF8 : Encoding.Unicode;
             }
             catch (IOException)
             {
@@ -26,7 +30,7 @@ internal sealed class Output
             }
 
             // 프롬프트 다음 줄부터 깔끔하게 시작하도록
-            if (!OutputGoesToFileOrPipe())
+            if (!redirected)
             {
                 Console.WriteLine();
             }

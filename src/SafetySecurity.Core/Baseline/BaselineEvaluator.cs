@@ -93,12 +93,19 @@ public static class BaselineEvaluator
             // BaselineDetail이 없으면 예전 버전이 쓴 기록이에요. 업데이트 직후에 알림이 쏟아지지 않게, 알리지 않고 지금 상태를 기록해요.
         }
 
-        var toNotify = firstRun
-            ? result.Findings.Where(f => f.Severity >= Severity.High).ToList()
-            : result.Findings.Where(f => f.IsNew && f.Severity >= config.NotifyMinSeverity).ToList();
+        // 처음 보는 분류(예: 관리자 범위가 처음 검사한 서비스, 새 버전에 생긴 분류)는 첫 검사처럼 '높음'만 알려요.
+        // 그 분류의 기존 항목이 한꺼번에 '새 항목' 알림으로 쏟아지지 않게요.
+        var initialized = InitializedCategories(state, result.Scope);
+        var toNotify = result.Findings
+            .Where(f => firstRun || !initialized.Contains(f.Category)
+                ? f.Severity >= Severity.High
+                : f.IsNew && f.Severity >= config.NotifyMinSeverity)
+            .ToList();
 
         // 끝까지 검사한 분류만 갱신해요 (빠른 검사·중단된 검사가 다른 분류의 기록을 지우지 않도록).
+        // 일부만 확인한 분류는 찾은 항목만 더하고, 이번에 못 본 예전 항목은 지우지 않아요 (읽지 못한 것을 '없어짐'으로 보지 않게).
         var completed = new HashSet<string>(result.CompletedCategories, StringComparer.Ordinal);
+        var partial = new HashSet<string>(result.PartialCategories, StringComparer.Ordinal);
         var previous = new Dictionary<string, BaselineEntry>(state.BaselineDetail, StringComparer.Ordinal);
         foreach (var stale in state.Baseline.Where(kv => completed.Contains(kv.Value)).Select(kv => kv.Key).ToList())
         {
@@ -108,7 +115,7 @@ public static class BaselineEvaluator
 
         foreach (var f in result.Findings.Concat(hidden))
         {
-            if (completed.Contains(f.Category))
+            if (completed.Contains(f.Category) || partial.Contains(f.Category))
             {
                 state.Baseline[f.Id] = f.Category;
                 previous.TryGetValue(f.Id, out var before);
@@ -131,13 +138,50 @@ public static class BaselineEvaluator
             state.IgnoredDetail.Remove(orphan);
         }
 
-        if (!result.Aborted && !result.Quick)
+        if (!result.Aborted)
         {
-            state.BaselineInitialized = true;
+            initialized.UnionWith(completed);
+            state.InitializedCategories = initialized.Known;
+            if (!result.Quick)
+            {
+                state.BaselineInitialized = true;
+            }
         }
 
         state.Version = ScanState.CurrentVersion;
         return new NotifyDecision(toNotify, firstRun) { IgnoreEdits = edits };
+    }
+
+    /// <summary>
+    /// 베이스라인이 의미 있는 분류. 이 칸이 없던 예전 기록(null)은, 전체 검사를 한 적이 있으면 예전처럼 모든 분류를 끝낸 것으로 보되,
+    /// 그 범위의 전체 검사가 하지 않는 분류(예: 관리자 범위의 서비스)만 처음 보는 분류로 봐요.
+    /// </summary>
+    private static InitializedSet InitializedCategories(ScanState state, ScanScope scope)
+    {
+        if (state.InitializedCategories is { } known)
+        {
+            return new InitializedSet(new HashSet<string>(known, StringComparer.Ordinal), null);
+        }
+
+        if (!state.BaselineInitialized)
+        {
+            return new InitializedSet(new HashSet<string>(StringComparer.Ordinal), null);
+        }
+
+        var scanners = ScanEngine.AllScanners();
+        var inFullScan = scanners.Where(s => s.RunsIn(scope, quick: false)).Select(s => s.Category).ToHashSet(StringComparer.Ordinal);
+        var notInFullScan = scanners.Select(s => s.Category).Where(c => !inFullScan.Contains(c)).ToHashSet(StringComparer.Ordinal);
+        inFullScan.UnionWith(state.Baseline.Values.Where(c => !notInFullScan.Contains(c)));
+        return new InitializedSet(inFullScan, notInFullScan);
+    }
+
+    /// <summary>베이스라인이 의미 있는 분류 모음. <paramref name="LegacyExcept"/>가 있으면 예전 기록이라, 거기 없는 분류는 모두 끝낸 것으로 봐요.</summary>
+    private sealed record InitializedSet(HashSet<string> Known, HashSet<string>? LegacyExcept)
+    {
+        public bool Contains(string category) =>
+            Known.Contains(category) || (LegacyExcept is not null && !LegacyExcept.Contains(category));
+
+        public void UnionWith(IEnumerable<string> categories) => Known.UnionWith(categories);
     }
 
     /// <summary>알림·보고서에서 달라진 항목을 새 항목과 구분해서 보여주는 제목.</summary>

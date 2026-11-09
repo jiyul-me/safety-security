@@ -18,7 +18,7 @@ public class SampleReportTests
         Scope = ScanScope.User,
         Reason = ScanReason.Logon,
         Completed = ["COM 하이재킹 (HKCU CLSID)", "자동 실행 (Run 키, 시작프로그램, Winlogon, IFEO)", "서비스·드라이버", "예약 작업", "브라우저 정책·바로가기·프록시", "Microsoft Defender 설정", "hosts 파일", "사용자 폴더의 새 실행 파일"],
-        Coverage = ["Defender 로컬 제외 목록: 관리자만 읽을 수 있어요. 'install --admin'으로 관리자 작업을 추가하면 확인해요."],
+        Coverage = ["Defender 로컬 제외 목록: " + Scanners.DefenderScanner.LocalExclusionsNote(adminScanInstalled: false)],
         Findings =
         [
             new ReportFinding

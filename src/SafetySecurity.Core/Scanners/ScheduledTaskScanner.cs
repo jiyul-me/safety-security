@@ -33,11 +33,20 @@ public sealed class ScheduledTaskScanner : IScanner
         var xml = ctx.Tasks.GetTasksXml(out var error);
         if (xml is null)
         {
-            ctx.Coverage.Skipped("예약 작업", error ?? "작업 목록을 읽지 못했어요.");
+            ctx.Coverage.Incomplete(CategoryName, "예약 작업", error ?? "작업 목록을 읽지 못했어요.");
             return findings;
         }
 
-        foreach (var task in TaskXmlParser.Parse(xml))
+        var parsed = TaskXmlParser.ParseAll(xml);
+        if (parsed.Unreadable.Count > 0)
+        {
+            // 작업 하나의 XML이 깨져도 나머지 작업은 검사해요. 읽지 못한 작업은 그 자체가 수상할 수 있어서 이름을 적어 둬요.
+            var names = string.Join(", ", parsed.Unreadable.Take(5));
+            var more = parsed.Unreadable.Count > 5 ? $" 외 {parsed.Unreadable.Count - 5}개" : string.Empty;
+            ctx.Coverage.Incomplete(CategoryName, "예약 작업", $"작업 {parsed.Unreadable.Count}개의 내용을 읽지 못했어요 ({names}{more}). 작업 스케줄러에서 직접 확인해 보세요.");
+        }
+
+        foreach (var task in parsed.Tasks)
         {
             ctx.Pacer.Step();
             if (OwnTasks.HasOwnPrefix(task.Name))
@@ -315,7 +324,7 @@ public sealed class HiddenTaskScanner : IScanner
         using var root = ctx.Registry.Open(RegHive.LocalMachine, TreePath);
         if (root is null)
         {
-            ctx.Coverage.Skipped("숨겨진 예약 작업", "TaskCache를 읽을 권한이 없어요 (관리자 작업에서 확인해요).");
+            ctx.Coverage.Incomplete(CategoryName, "숨겨진 예약 작업", "TaskCache를 읽을 권한이 없어요 (관리자 작업에서 확인해요).");
             return findings;
         }
 

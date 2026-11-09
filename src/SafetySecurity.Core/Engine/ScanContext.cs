@@ -51,6 +51,12 @@ public sealed class ScanContext
 
     public ScanScope Scope { get; init; } = ScanScope.User;
 
+    /// <summary>
+    /// 관리자 설치(관리자 검사 작업)가 있는지. 사용자 검사에서 관리자만 읽을 수 있는 항목을 못 봤을 때
+    /// "관리자 검사에서 확인해요"와 "설치할 때 '관리자 권한으로'를 고르면 확인해요" 가운데 맞는 안내를 고르려고 써요.
+    /// </summary>
+    public bool AdminScanInstalled { get; init; }
+
     public CoverageLog Coverage { get; } = new();
 
     public SystemPaths Paths => Classifier.Paths;
@@ -62,8 +68,23 @@ public sealed class ScanContext
 public sealed class CoverageLog
 {
     private readonly List<string> _notes = [];
+    private readonly HashSet<string> _incomplete = new(StringComparer.Ordinal);
 
     public IReadOnlyList<string> Notes => _notes;
+
+    /// <summary>끝까지 확인하지 못한 분류 (<see cref="Incomplete"/>).</summary>
+    public IReadOnlySet<string> IncompleteCategories => _incomplete;
+
+    /// <summary>
+    /// 분류 하나를 끝까지 확인하지 못했어요 (목록을 읽지 못했거나 일부가 깨졌어요). 보고서의 '확인하지 못한 것'에 적고,
+    /// 그 분류는 '깨끗함(검사 완료)'으로 치지 않아요. 그래서 베이스라인에서 그 분류의 예전 항목을 지우지 않고,
+    /// 다음에 제대로 읽혔을 때 같은 항목을 '새 항목'으로 다시 알리지 않아요.
+    /// </summary>
+    public void Incomplete(string category, string what, string why)
+    {
+        Skipped(what, why);
+        _incomplete.Add(category);
+    }
 
     public void Skipped(string what, string why)
     {
