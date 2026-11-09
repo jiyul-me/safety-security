@@ -131,7 +131,7 @@ function Show-IdList([string]$Path) {
         $size = [BitConverter]::ToUInt16($b, $pos)
         if ($size -eq 0) { break }
         $type = $b[$pos + 2]
-        $extra = if ($type -eq 0x1F -and $size -ge 20) { ([Guid]::new([byte[]]$b[($pos + 4)..($pos + 19)])).ToString() } else { (($b[($pos + 2)..([Math]::Min($pos + $size - 1, $pos + 40))] | ForEach-Object { $_.ToString('X2') }) -join ' ') }
+        $extra = if ($type -eq 0x1F -and $size -ge 20) { ([Guid]::new([byte[]]$b[($pos + 4)..($pos + 19)])).ToString() } else { (($b[($pos + 2)..([Math]::Min($pos + $size - 1, $pos + 120))] | ForEach-Object { $_.ToString('X2') }) -join ' ') }
         Write-Host ("      item size {0,4} type 0x{1:X2}  {2}" -f $size, $type, $extra)
         $pos += $size
     }
@@ -269,7 +269,7 @@ try {
     foreach ($case in @(@{ Path = $lnkTemp; What = 'Windows-made shortcut' }, @{ Path = $lnkIdList; What = 'IDList-only shortcut' }, @{ Path = $lnkCmd; What = 'shortcut to cmd /c start' })) {
         $lf = @($rep1.findings | Where-Object { $_.ruleId -eq 'RUN-002' -and $_.location -eq $case.Path })
         Check ($lf.Count -eq 1 -and $lf[0].severity -eq 'High') "$($case.What) to a Temp payload is High"
-        if ($lf.Count -ne 1) { Show-IdList $case.Path }
+        if (-not ($lf.Count -eq 1 -and $lf[0].severity -eq 'High' -and $lf[0].target -eq $evilExe)) { Show-IdList $case.Path; $lf | ForEach-Object { Write-Host "    finding: [$($_.severity)] $($_.ruleId) target=$($_.target) :: $($_.reasons -join ' / ')" } }
         if ($lf.Count -eq 1) {
             Check ($lf[0].target -eq $evilExe) "$($case.What) targets the payload (got $($lf[0].target))"
             Check (@($lf[0].reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -eq 0) "$($case.What) is not mistaken for a disguised shortcut"
