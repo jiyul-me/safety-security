@@ -13,7 +13,7 @@ internal sealed class Output
 
     public Output()
     {
-        HasConsole = IsRedirected() || NativeMethods.AttachConsole(NativeMethods.ATTACH_PARENT_PROCESS);
+        HasConsole = OutputGoesToFileOrPipe() || NativeMethods.AttachConsole(NativeMethods.ATTACH_PARENT_PROCESS);
         if (HasConsole)
         {
             try
@@ -26,7 +26,7 @@ internal sealed class Output
             }
 
             // 프롬프트 다음 줄부터 깔끔하게 시작하도록
-            if (!IsRedirected())
+            if (!OutputGoesToFileOrPipe())
             {
                 Console.WriteLine();
             }
@@ -63,15 +63,20 @@ internal sealed class Output
         }
     }
 
-    private static bool IsRedirected()
+    /// <summary>
+    /// 출력이 진짜 파일이나 파이프로 연결됐는지 (예: PowerShell 파이프, CI의 출력 파일).
+    /// Console.IsOutputRedirected는 Win+R·시작 메뉴처럼 출력 핸들이 없을 때도 true라서
+    /// 메시지 창과 알림이 안 떴어요 (v0.2.0-rc.2 시험에서 발견). 그래서 핸들 종류를 직접 봐요.
+    /// </summary>
+    private static bool OutputGoesToFileOrPipe()
     {
-        try
-        {
-            return Console.IsOutputRedirected;
-        }
-        catch (IOException)
+        var handle = NativeMethods.GetStdHandle(NativeMethods.STD_OUTPUT_HANDLE);
+        if (handle == IntPtr.Zero || handle == new IntPtr(-1))
         {
             return false;
         }
+
+        var type = NativeMethods.GetFileType(handle);
+        return type is NativeMethods.FILE_TYPE_DISK or NativeMethods.FILE_TYPE_PIPE;
     }
 }
