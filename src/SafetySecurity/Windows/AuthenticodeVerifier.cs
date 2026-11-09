@@ -32,6 +32,12 @@ internal sealed unsafe class AuthenticodeVerifier : ISignatureVerifier
 
     public SignatureInfo Verify(string path)
     {
+        // 네트워크 경로는 존재 여부조차 확인하지 않아요 (확인만 해도 SMB·WebDAV로 다른 컴퓨터에 접속해요).
+        if (NetworkDrives.IsNetworkPath(path))
+        {
+            return new SignatureInfo(SignatureStatus.Error, Detail: LocalOnlySignatureVerifier.NetworkDetail);
+        }
+
         if (!File.Exists(path))
         {
             return new SignatureInfo(SignatureStatus.NotFound);

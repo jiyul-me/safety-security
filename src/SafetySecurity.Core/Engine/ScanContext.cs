@@ -9,9 +9,27 @@ public sealed class ScanContext
 {
     public required IRegistryView Registry { get; init; }
 
-    public required IFileSystemView Files { get; init; }
+    private readonly IFileSystemView _files = null!;
+    private readonly ISignatureVerifier _signatures = null!;
+    private IFileSystemView? _localFiles;
+    private ISignatureVerifier? _localSignatures;
 
-    public required ISignatureVerifier Signatures { get; init; }
+    /// <summary>
+    /// 파일 시스템 (읽기 전용). 넣은 보기에 항상 <see cref="LocalOnlyFileSystemView"/>를 씌워서,
+    /// 어떤 스캐너도 네트워크 경로를 열지 못하게 해요.
+    /// </summary>
+    public required IFileSystemView Files
+    {
+        get => _localFiles ??= new LocalOnlyFileSystemView(_files, Classifier, folder => Coverage.Skipped("네트워크 폴더 " + folder, "네트워크에 접속하지 않으려고 열지 않았어요."));
+        init => _files = value;
+    }
+
+    /// <summary>서명 확인. 네트워크 경로는 확인하지 않아요 (<see cref="LocalOnlySignatureVerifier"/>).</summary>
+    public required ISignatureVerifier Signatures
+    {
+        get => _localSignatures ??= _signatures as LocalOnlySignatureVerifier ?? new LocalOnlySignatureVerifier(_signatures, Classifier);
+        init => _signatures = value;
+    }
 
     public required PathClassifier Classifier { get; init; }
 

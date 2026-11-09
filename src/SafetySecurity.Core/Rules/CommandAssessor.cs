@@ -103,8 +103,21 @@ public static class CommandAssessor
     private static void AssessScript(ScanContext ctx, string path, CommandAssessment result)
     {
         var kind = ctx.Classifier.Classify(path);
-        var meta = ctx.Files.GetMeta(path);
         result.Evidence.Add(new("스크립트 위치", PathClassifier.ToKorean(kind)));
+        if (kind == PathKind.Network)
+        {
+            // 네트워크 경로의 스크립트는 열지 않아요 (열기만 해도 다른 컴퓨터에 접속해요).
+            var remote = PathClassifier.IsRemotePath(path);
+            if (ctx.Classifier.NetworkLocation(path) is { } host)
+            {
+                result.Evidence.Add(new("네트워크 위치", host));
+            }
+
+            Merge(result, remote ? Model.Severity.High : Model.Severity.Medium, [$"스크립트가 {PathClassifier.ToKorean(kind)}에서 자동 실행돼요.", ExecutableAssessor.NotCheckedReason]);
+            return;
+        }
+
+        var meta = ctx.Files.GetMeta(path);
         if (meta is null)
         {
             Merge(result, Model.Severity.Low, ["등록된 스크립트 파일이 없어요."]);

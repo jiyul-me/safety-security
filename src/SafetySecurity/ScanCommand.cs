@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SafetySecurity.Core.Abstractions;
 using SafetySecurity.Core.Baseline;
 using SafetySecurity.Core.Engine;
 using SafetySecurity.Core.Model;
@@ -100,11 +101,16 @@ internal static class ScanCommand
         using var progress = o.ProgressToast ? ScanningToast.TryShow(store.Log) : null;
 
         var sigCache = store.LoadSignatureCache(o.Scope);
-        var files = new WinFileSystemView();
-        var signatures = new CachingSignatureVerifier(new AuthenticodeVerifier(), files, sigCache, () => DateTimeOffset.UtcNow);
+        var networkDrives = NetworkDrives.Letters;
         var paths = new SystemPaths(Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
-            .ToDictionary(e => (string)e.Key, e => LongPath((string?)e.Value ?? string.Empty), StringComparer.OrdinalIgnoreCase));
-        var classifier = new PathClassifier(paths);
+            .ToDictionary(e => (string)e.Key, e => LongPath((string?)e.Value ?? string.Empty, networkDrives), StringComparer.OrdinalIgnoreCase));
+        var classifier = new PathClassifier(paths) { NetworkDrives = networkDrives };
+
+        // 네트워크 경로(\\server\share, 네트워크 드라이브)는 어떤 경우에도 열지 않아요.
+        // ScanContext가 스캐너용 보기에 같은 보호를 씌우고, 서명 캐시도 보호된 보기만 써요.
+        var rawFiles = new WinFileSystemView();
+        var files = new LocalOnlyFileSystemView(rawFiles, classifier);
+        var signatures = new CachingSignatureVerifier(new AuthenticodeVerifier(), files, sigCache, () => DateTimeOffset.UtcNow);
         var self = new HashSet<string>(StringComparer.Ordinal);
         foreach (var p in new[] { Environment.ProcessPath, Path.Combine(TaskInstaller.UserInstallDir, TaskInstaller.ExeName), Path.Combine(TaskInstaller.AdminInstallDir, TaskInstaller.ExeName) })
         {
@@ -117,7 +123,7 @@ internal static class ScanCommand
         var ctx = new ScanContext
         {
             Registry = new WinRegistryView(),
-            Files = files,
+            Files = rawFiles,
             Signatures = signatures,
             Classifier = classifier,
             Pacer = o.Force && o.Reason == ScanReason.Manual ? new Pacer(null, Budget) : new Pacer(detector, Budget),
@@ -160,6 +166,9 @@ internal static class ScanCommand
             state.Pending = null;
         }
 
+        // 설정 파일이 없으면 기본값으로 만들어 둬요 (직접 고칠 수 있게). 관리자 설치는 사용자 폴더에 미리 만들지 않아서,
+        // 사용자 검사가 처음 끝날 때 만들어져요. 관리자 검사는 보호된 관리자 폴더의 설정만 써요.
+        store.WriteDefaultConfigIfMissing();
         store.SaveState(o.Scope, state);
 
         var high = result.Findings.Count(f => f.Severity == Severity.High);
@@ -217,10 +226,11 @@ internal static class ScanCommand
     /// 환경 변수 값이 8.3 짧은 이름(예: %TEMP% = C:\Users\RUNNER~1\...)이면 긴 이름으로 바꿔요.
     /// 안 바꾸면 같은 폴더를 다른 곳으로 보고 위치 분류가 틀려져요.
     /// </summary>
-    private static unsafe string LongPath(string value)
+    private static unsafe string LongPath(string value, IReadOnlySet<char> networkDrives)
     {
-        if (!value.Contains('~') || value.Contains(';') || value.Length < 3 || value[1] != ':')
+        if (!value.Contains('~') || value.Contains(';') || value.Length < 3 || value[1] != ':' || networkDrives.Contains(char.ToUpperInvariant(value[0])))
         {
+            // 네트워크 드라이브는 이름을 바꾸려고 접속하지 않아요.
             return value;
         }
 

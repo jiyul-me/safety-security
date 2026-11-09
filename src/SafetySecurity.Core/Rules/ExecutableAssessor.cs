@@ -10,6 +10,11 @@ public sealed class ExecutableAssessment
 
     public bool Exists { get; init; }
 
+    /// <summary>
+    /// 파일을 일부러 확인하지 않았어요 (네트워크 경로라서). 이때 <see cref="Exists"/>는 '없음'이 아니라 '모름'이에요.
+    /// </summary>
+    public bool NotChecked { get; init; }
+
     public PathKind Kind { get; init; }
 
     public SignatureInfo? Signature { get; init; }
@@ -32,11 +37,18 @@ public static class ExecutableAssessor
 {
     public static readonly TimeSpan RecentWindow = TimeSpan.FromDays(7);
     public const long MaxHashBytes = 64L * 1024 * 1024;
+    public const string NotCheckedReason = "검사기는 네트워크에 접속하지 않으려고 이 파일을 열어 보지 않았어요 (서명·크기·시각 확인 안 함).";
 
     public static ExecutableAssessment Assess(ScanContext ctx, string rawPath, bool includeHash = true)
     {
         var path = ctx.Paths.Expand(rawPath.Trim().Trim('"'));
         var kind = ctx.Classifier.Classify(path);
+        if (kind == PathKind.Network)
+        {
+            // 네트워크 경로는 정보를 읽기만 해도 다른 컴퓨터에 접속해요. 파일을 열지 않고 경로만 보고 판단해요.
+            return AssessNetwork(ctx, path);
+        }
+
         var meta = ctx.Files.GetMeta(path);
         if (meta is null)
         {
@@ -147,6 +159,36 @@ public static class ExecutableAssessor
             }
         }
 
+        return result;
+    }
+
+    /// <summary>
+    /// 네트워크 경로를 파일을 열지 않고 평가해요.
+    /// \\server\share 같은 원격 경로를 자동 실행하는 건 드물고 악성코드가 쓰는 수법이라 높음,
+    /// 사용자가 연결한 네트워크 드라이브(Z: 등)는 NAS에 프로그램을 둔 경우도 있어서 보통으로 봐요.
+    /// </summary>
+    public static ExecutableAssessment AssessNetwork(ScanContext ctx, string path)
+    {
+        var remote = PathClassifier.IsRemotePath(path);
+        var result = new ExecutableAssessment
+        {
+            Path = path,
+            Exists = false,
+            NotChecked = true,
+            Kind = PathKind.Network,
+            Severity = remote ? Model.Severity.High : Model.Severity.Medium,
+        };
+        result.Reasons.Add(remote
+            ? "다른 컴퓨터(네트워크 경로)의 파일을 실행하도록 등록돼 있어요. 일반 프로그램은 거의 이렇게 하지 않고, 악성코드가 쓰는 수법이에요."
+            : "네트워크 드라이브의 파일을 실행하도록 등록돼 있어요. 직접 NAS·공유 폴더에 둔 프로그램이 아니라면 확인하세요.");
+        result.Reasons.Add(NotCheckedReason);
+        result.Evidence.Add(new("경로 종류", PathClassifier.ToKorean(PathKind.Network)));
+        if (ctx.Classifier.NetworkLocation(path) is { } host)
+        {
+            result.Evidence.Add(new("네트워크 위치", host));
+        }
+
+        result.Evidence.Add(new("파일 확인", "안 함 (네트워크에 접속하지 않으려고 열지 않았어요)"));
         return result;
     }
 

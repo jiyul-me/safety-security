@@ -1,4 +1,5 @@
-// 이 파일은 검사기 '자기 데이터 폴더'(%LOCALAPPDATA%\SafetySecurity)에만 써요: 상태, 설정, 서명 캐시, 보고서, 로그.
+// 이 파일은 검사기 '자기 데이터 폴더'에만 써요: 상태, 설정, 서명 캐시, 보고서, 로그.
+//   일반 권한: %LOCALAPPDATA%\SafetySecurity, 관리자 권한: C:\Program Files\SafetySecurity\data (관리자만 쓸 수 있어요).
 // 시스템의 다른 곳은 절대 쓰지 않아요. 그래서 이 파일에서만 금지 API 규칙(RS0030)을 풀어요.
 #pragma warning disable RS0030
 
@@ -6,9 +7,11 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using SafetySecurity.Core.Baseline;
+using SafetySecurity.Core.Install;
 using SafetySecurity.Core.Model;
 using SafetySecurity.Core.Reporting;
 using SafetySecurity.Core.Rules;
+using SafetySecurity.Install;
 
 namespace SafetySecurity.Runtime;
 
@@ -17,12 +20,31 @@ internal sealed class DataStore
     public const int KeepReports = 30;
     private const long MaxLogBytes = 1024 * 1024;
 
+    /// <summary>
+    /// 데이터 폴더를 정해요. --data-dir이 없으면 일반 권한은 사용자 폴더, 관리자 권한은 보호된 관리자 폴더를 써요.
+    /// 관리자 권한 프로세스는 사용자가 쓸 수 있는 %LOCALAPPDATA%\SafetySecurity를 절대 읽거나 쓰지 않아요.
+    /// </summary>
     public DataStore(string? overrideDir)
     {
-        Root = overrideDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SafetySecurity");
+        IsExplicit = !string.IsNullOrWhiteSpace(overrideDir);
+        Root = DataRoots.Resolve(overrideDir, Environment.IsPrivilegedProcess, LocalAppData, TaskInstaller.AdminInstallDir);
     }
 
+    /// <summary>사용자 데이터 폴더 (%LOCALAPPDATA%\SafetySecurity). 관리자 권한 프로세스는 쓰지 않아요.</summary>
+    public static string UserRoot => DataRoots.User(LocalAppData);
+
+    /// <summary>관리자 데이터 폴더 (C:\Program Files\SafetySecurity\data). Program Files 권한을 물려받아 관리자만 쓸 수 있어요.</summary>
+    public static string AdminRoot => DataRoots.Admin(TaskInstaller.AdminInstallDir);
+
     public string Root { get; }
+
+    /// <summary>--data-dir로 폴더를 직접 정했는지.</summary>
+    public bool IsExplicit { get; }
+
+    /// <summary>보호된 관리자 데이터 폴더를 쓰는지.</summary>
+    public bool IsAdminRoot => string.Equals(Path.GetFullPath(Root), Path.GetFullPath(AdminRoot), StringComparison.OrdinalIgnoreCase);
+
+    private static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
     public string ReportsDir => Path.Combine(Root, "reports");
 

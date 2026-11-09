@@ -81,6 +81,44 @@ public class ForbiddenApiTests
     }
 
     [Fact]
+    public void NoProcessTreeKill()
+    {
+        // Process.Kill(true)는 자식을 찾으려고 모든 프로세스(게임·안티치트 포함)를 OpenProcess로 열어요.
+        // 우리가 띄운 자식만 Kill()로 끝내야 해요. BannedSymbols.txt가 빌드에서 막고, 이 테스트가 소스에서 한 번 더 막아요.
+        var violations = Sources()
+            .Where(s => s.Text.Contains("entireProcessTree", StringComparison.Ordinal) || Regex.IsMatch(s.Text, @"\.Kill\(\s*[^)\s]"))
+            .Select(s => Path.GetFileName(s.File))
+            .ToList();
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void BannedSymbolsBlockProcessTreeKill()
+    {
+        var banned = File.ReadAllText(Path.Combine(Path.GetDirectoryName(SrcDir())!, "BannedSymbols.txt"));
+        Assert.Contains("M:System.Diagnostics.Process.Kill(System.Boolean);", banned, StringComparison.Ordinal);
+        Assert.Contains("M:System.Diagnostics.Process.GetProcesses;", banned, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ChildProcessesGetAFreshMinimalEnvironment()
+    {
+        // 관리자 권한 검사가 띄우는 powershell.exe·schtasks.exe가 사용자 환경 변수(PSModulePath 등)를 물려받지 않아야 해요.
+        var text = Sources().Single(s => Path.GetFileName(s.File) == "ChildProcess.cs").Text;
+        Assert.Contains("psi.Environment.Clear();", text, StringComparison.Ordinal);
+        Assert.Contains("ChildEnvironment.Build(", text, StringComparison.Ordinal);
+        Assert.Contains("-NoProfile", text, StringComparison.Ordinal);
+        Assert.Contains("-NonInteractive", text, StringComparison.Ordinal);
+
+        // 자식 프로세스를 직접 띄우는 곳은 ChildProcess.cs뿐이어야 해요. 다른 곳은 셸로 우리 exe(UAC)나 보고서만 열어요.
+        var others = Regex.Matches(string.Concat(Sources().Where(s => Path.GetFileName(s.File) != "ChildProcess.cs").Select(s => s.Text)), @"new ProcessStartInfo\([^;]*;", RegexOptions.Singleline)
+            .Select(m => m.Value)
+            .ToList();
+        Assert.NotEmpty(others);
+        Assert.All(others, m => Assert.Contains("UseShellExecute = true", m, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void WriteExceptionsAreLimitedToKnownFiles()
     {
         // RS0030(금지 API) 경고를 끄는 파일은 이 목록뿐이어야 해요.

@@ -1,4 +1,5 @@
 using System.Reflection;
+using SafetySecurity.Core.Install;
 using SafetySecurity.Core.Model;
 using SafetySecurity.Install;
 using SafetySecurity.Runtime;
@@ -28,12 +29,14 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
   SafetySecurity.exe status               마지막 검사, 미뤄둔 검사, 등록된 작업
   SafetySecurity.exe report               마지막 보고서 열기
   SafetySecurity.exe ignore <ID>          항목을 무시 목록에 추가 (보고서에 ID가 있어요)
+      --scope admin        관리자 검사의 무시 목록 (관리자 권한을 요청해요)
   SafetySecurity.exe unignore <ID>        무시 목록에서 빼기
   SafetySecurity.exe verify <파일>        파일 하나의 디지털 서명 확인
   SafetySecurity.exe test-notify          알림이 뜨는지 시험
   SafetySecurity.exe version
 
-공통 옵션:  --data-dir <폴더>  상태·보고서 폴더 (기본: %LOCALAPPDATA%\SafetySecurity)
+공통 옵션:  --data-dir <폴더>  상태·보고서 폴더 (기본: %LOCALAPPDATA%\SafetySecurity,
+                              관리자 권한이면 C:\Program Files\SafetySecurity\data)
             --quiet           메시지를 보여주지 않고 종료 코드만 돌려줘요 (설치 프로그램용)
 
 이 프로그램은 아무것도 지우거나 고치지 않고, 인터넷을 쓰지 않아요.
@@ -104,7 +107,13 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
 
                 case "report":
                 {
+                    // 관리자 권한이면 데이터 폴더가 관리자 폴더라서, 사용자 범위 보고서가 없으면 관리자 검사 보고서를 열어요.
                     var state = store.LoadState(ScanScope.User);
+                    if (state.LastReportPath is null && store.IsAdminRoot)
+                    {
+                        state = store.LoadState(ScanScope.Admin);
+                    }
+
                     if (state.LastReportPath is { } path && File.Exists(path))
                     {
                         ScanCommand.OpenFile(path);
@@ -125,6 +134,13 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
                     {
                         output.Line("ID를 적어 주세요. 예: SafetySecurity.exe ignore 1a2b3c4d5e6f7a8b");
                         return 1;
+                    }
+
+                    if (scope == ScanScope.Admin && DataRoots.NeedsElevationToChangeAdminState(dataDir, Environment.IsPrivilegedProcess))
+                    {
+                        var code = ChangeAdminIgnore(command, id, output);
+                        output.ShowIfNoConsole("SafetySecurity");
+                        return code;
                     }
 
                     var state = store.LoadState(scope);
@@ -234,13 +250,47 @@ SafetySecurity — 읽기 전용 Windows 보안 검사기
         return v;
     }
 
+    /// <summary>
+    /// 관리자 검사의 무시 목록은 관리자만 쓸 수 있는 폴더에 있어서, 관리자 권한으로 다시 실행해서 바꿔요 (install --admin과 같은 방식).
+    /// </summary>
+    private static int ChangeAdminIgnore(string command, string id, Output output)
+    {
+        if (!TaskInstaller.AdminInstallExists())
+        {
+            output.Line("관리자 설치가 없어서 관리자 검사 무시 목록도 없어요. 관리자 설치(install --admin)를 한 뒤에 다시 해 주세요.");
+            return 1;
+        }
+
+        // 다시 실행할 때 넘기는 인자는 우리가 만든 값만 써요. ID는 보고서의 16진수 ID 형식만 받아요.
+        if (id.Length > 64 || !id.All(char.IsAsciiLetterOrDigit))
+        {
+            output.Line("ID 형식이 아니에요. 보고서에 적힌 ID(예: 1a2b3c4d5e6f7a8b)를 그대로 적어 주세요.");
+            return 1;
+        }
+
+        output.Line("관리자 검사의 무시 목록은 관리자 권한으로만 바꿀 수 있어요. UAC 창에서 '예'를 눌러 주세요.");
+        var code = TaskInstaller.Relaunch($"{command} {id.ToLowerInvariant()} --scope admin --quiet");
+        output.Line(code == 0
+            ? (command == "ignore" ? $"{id}: 다음 관리자 검사부터 숨겨요." : $"{id}: 관리자 검사에서 다시 보여요.")
+            : "바꾸지 못했어요 (권한 요청을 취소했거나 오류가 났어요).");
+        return code == 0 ? 0 : 1;
+    }
+
     private static void Status(DataStore store, Output output)
     {
         output.Line($"SafetySecurity {Version}");
         output.Line("데이터 폴더: " + store.Root);
+
+        // 관리자 검사 기록은 보호된 관리자 폴더에 있어요. 일반 권한에서도 읽기만 해서 보여줘요.
+        var adminStore = store.IsExplicit || store.IsAdminRoot ? store : new DataStore(DataStore.AdminRoot);
+        if (!ReferenceEquals(adminStore, store) && Directory.Exists(adminStore.Root))
+        {
+            output.Line("관리자 검사 데이터 폴더: " + adminStore.Root);
+        }
+
         foreach (var scope in new[] { ScanScope.User, ScanScope.Admin })
         {
-            var s = store.LoadState(scope);
+            var s = (scope == ScanScope.Admin ? adminStore : store).LoadState(scope);
             if (s.LastScanUtc is null && s.Pending is null)
             {
                 continue;

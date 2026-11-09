@@ -278,4 +278,11 @@ internal static unsafe partial class NativeMethods
     /// <summary>8.3 짧은 이름(C:\Users\RUNNER~1)을 긴 이름으로 바꿔요.</summary>
     [LibraryImport("kernel32.dll", EntryPoint = "GetLongPathNameW", StringMarshalling = StringMarshalling.Utf16)]
     internal static partial uint GetLongPathName(string lpszShortPath, char* lpszLongPath, uint cchBuffer);
+
+    /// <summary>
+    /// 드라이브 문자(예: "Z:")가 어떤 장치에 연결돼 있는지 읽어요 (네트워크 드라이브인지 확인용).
+    /// Windows 안의 이름 연결만 읽어서, 네트워크에는 접속하지 않아요.
+    /// </summary>
+    [LibraryImport("kernel32.dll", EntryPoint = "QueryDosDeviceW", StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial uint QueryDosDevice(string lpDeviceName, char* lpTargetPath, uint ucchMax);
 }

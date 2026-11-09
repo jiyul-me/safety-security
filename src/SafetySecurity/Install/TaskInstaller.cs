@@ -23,6 +23,10 @@ internal static class TaskInstaller
 
     public static string AdminInstallDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "SafetySecurity");
 
+    /// <summary>관리자 설치(Program Files의 exe나 보호된 데이터 폴더)가 있는지.</summary>
+    public static bool AdminInstallExists() =>
+        File.Exists(Path.Combine(AdminInstallDir, ExeName)) || Directory.Exists(DataStore.AdminRoot);
+
     public static int Install(bool admin, DataStore store, Output output)
     {
         var elevated = Environment.IsPrivilegedProcess;
@@ -133,6 +137,11 @@ internal static class TaskInstaller
         {
             store.DeleteAll();
             output.Line("검사 기록·보고서 폴더를 지웠어요: " + store.Root);
+            if (store.IsAdminRoot)
+            {
+                // 관리자 권한으로는 사용자가 쓸 수 있는 폴더를 지우지 않아요 (링크를 심어 다른 파일을 지우게 할 수 있어서요).
+                output.Line(@"내 계정의 검사 기록 폴더(%LOCALAPPDATA%\SafetySecurity)는 관리자 권한으로 지우지 않아요. 필요하면 관리자 권한 없이 'uninstall --purge'를 실행하거나 직접 지워 주세요.");
+            }
         }
 
         output.Line($"작업 {deleted}개를 지웠어요.");
@@ -156,11 +165,19 @@ internal static class TaskInstaller
 
     private static bool CreateTask(TaskSpec spec, DataStore store, Output output)
     {
-        var xmlPath = Path.Combine(store.Root, "task-" + spec.Name + ".xml");
+        // 임시 XML은 데이터 폴더에 둬요. 관리자 권한이면 데이터 폴더가 관리자만 쓸 수 있는 Program Files\SafetySecurity\data라서,
+        // 사용자 권한 프로그램이 schtasks가 읽기 전에 XML을 바꿔치기할 수 없어요.
+        // 이름을 매번 새로 짓고 CreateNew로 만들어서, 미리 놓아 둔 파일이나 링크를 따라가지 않아요.
+        var xmlPath = Path.Combine(store.Root, $"task-{spec.Name}-{Guid.NewGuid():N}.xml");
         Directory.CreateDirectory(store.Root);
         try
         {
-            File.WriteAllText(xmlPath, spec.Xml, Encoding.Unicode);
+            using (var fs = new FileStream(xmlPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                fs.Write(Encoding.Unicode.GetPreamble());
+                fs.Write(Encoding.Unicode.GetBytes(spec.Xml));
+            }
+
             foreach (var name in new[] { TaskXmlBuilder.Folder + spec.Name, FallbackPrefix + spec.Name })
             {
                 var r = Schtasks(["/create", "/tn", name, "/xml", xmlPath, "/f"]);
@@ -185,7 +202,7 @@ internal static class TaskInstaller
             {
                 File.Delete(xmlPath);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // 임시 XML을 못 지워도 설치에는 영향이 없어요 (자기 데이터 폴더 안의 파일이에요).
             }
@@ -217,7 +234,11 @@ internal static class TaskInstaller
         key.SetValue("ShowInSettings", 1, RegistryValueKind.DWord);
     }
 
-    private static int Relaunch(string arguments)
+    /// <summary>
+    /// 이 exe를 관리자 권한으로 다시 실행하고 끝날 때까지 기다려요 (UAC 창이 떠요). 취소하면 1을 돌려줘요.
+    /// 인자는 프로그램이 만든 고정된 값만 넘겨요.
+    /// </summary>
+    public static int Relaunch(string arguments)
     {
         try
         {

@@ -216,14 +216,20 @@ public sealed class TestEnv
         ["PUBLIC"] = @"C:\Users\Public",
     });
 
-    public ScanContext Context(ScanScope scope = ScanScope.User, bool elevated = false, IEnumerable<string>? self = null)
+    public ScanContext Context(
+        ScanScope scope = ScanScope.User,
+        bool elevated = false,
+        IEnumerable<string>? self = null,
+        IFileSystemView? files = null,
+        ISignatureVerifier? signatures = null,
+        IReadOnlySet<char>? networkDrives = null)
     {
-        var classifier = new PathClassifier(Paths);
+        var classifier = new PathClassifier(Paths) { NetworkDrives = networkDrives ?? new HashSet<char>() };
         return new ScanContext
         {
             Registry = Registry,
-            Files = Files,
-            Signatures = Signatures,
+            Files = files ?? Files,
+            Signatures = signatures ?? Signatures,
             Classifier = classifier,
             Now = Now,
             Scope = scope,

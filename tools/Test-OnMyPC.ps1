@@ -136,6 +136,11 @@ try {
     $script:results.Add("windows $([Environment]::OSVersion.Version) admin=$isAdmin")
     $k = Invoke-SS @('verify', "$env:SystemRoot\System32\kernel32.dll")
     Check ($k.Code -eq 0) 'Windows 파일 서명 확인 (kernel32.dll = 유효)'
+    # 기본 데이터 폴더: 관리자 권한이면 관리자만 쓸 수 있는 Program Files\SafetySecurity\data, 아니면 %LOCALAPPDATA%\SafetySecurity
+    # (status는 읽기만 하고 아무것도 만들지 않아요.)
+    $expectedData = if ($isAdmin) { Join-Path $env:ProgramFiles 'SafetySecurity\data' } else { Join-Path $env:LOCALAPPDATA 'SafetySecurity' }
+    $st = Invoke-SS @('status')
+    Check ($st.Text -match [regex]::Escape("데이터 폴더: $expectedData")) "기본 데이터 폴더 ($(if ($isAdmin) { '관리자 권한' } else { '일반 권한' })): $expectedData"
     $n = Invoke-SS @('test-notify', '--data-dir', $data)
     Check ($n.Code -eq 0) '알림 보내기'
     if (-not $NonInteractive) {

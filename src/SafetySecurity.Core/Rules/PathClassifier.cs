@@ -41,6 +41,16 @@ public sealed class PathClassifier(SystemPaths paths)
 {
     public SystemPaths Paths { get; } = paths;
 
+    /// <summary>
+    /// 네트워크 드라이브로 연결된 드라이브 문자 (대문자, 예: 'Z'). Windows 쪽에서 QueryDosDevice로 채워요.
+    /// 이 드라이브의 파일도 네트워크 경로로 보고 열지 않아요.
+    /// </summary>
+    public IReadOnlySet<char> NetworkDrives { get; init; } = new HashSet<char>();
+
+    // 네트워크 리디렉터 장치 (드라이브 문자가 이쪽으로 연결돼 있으면 네트워크 드라이브예요).
+    private static readonly string[] NetworkRedirectors =
+        [@"\Device\LanmanRedirector", @"\Device\Mup", @"\Device\WebDavRedirector", @"\Device\WinDfs", @"\Device\RdpDr", @"\??\UNC\"];
+
     // C:\Windows 안이지만 일반 사용자가 쓸 수 있는 폴더 (LOLBAS에서 자주 쓰여요).
     private static readonly string[] WritableWindowsSubdirs =
     [
@@ -129,6 +139,11 @@ public sealed class PathClassifier(SystemPaths paths)
 
     public PathKind Classify(string? path)
     {
+        if (IsNetworkPath(path))
+        {
+            return PathKind.Network;
+        }
+
         var n = Normalize(path);
         if (n.Length == 0)
         {
@@ -193,6 +208,104 @@ public sealed class PathClassifier(SystemPaths paths)
         }
 
         return PathKind.Other;
+    }
+
+    /// <summary>
+    /// 네트워크(다른 컴퓨터)를 거치는 경로인지: \\server\share, \\?\UNC\, \\?\GLOBALROOT\, WebDAV(\\host@SSL\...),
+    /// 그리고 네트워크 드라이브(<see cref="NetworkDrives"/>). 이런 경로는 열거나 정보를 읽기만 해도 네트워크에 접속해서,
+    /// 검사기는 파일을 전혀 건드리지 않고 경로만 보고 판단해요.
+    /// </summary>
+    public bool IsNetworkPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var p = Paths.Expand(path.Trim().Trim('"').Trim());
+        if (IsRemotePath(p))
+        {
+            return true;
+        }
+
+        return NetworkDrives.Count > 0 && DriveLetter(p) is { } d && NetworkDrives.Contains(d);
+    }
+
+    /// <summary>
+    /// 문자열만 보고 원격 경로인지 판단해요 (환경 변수는 펼치지 않아요).
+    /// \\?\ · \\.\ · \??\ 뒤에는 로컬 드라이브(C:\)나 볼륨(Volume{...})만 허용하고, 나머지(UNC, GLOBALROOT, 파이프·장치)는 모두 원격으로 봐요.
+    /// </summary>
+    public static bool IsRemotePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var p = path.Trim().Trim('"').Trim().Replace('/', '\\');
+        if (p.StartsWith(@"\\?\", StringComparison.Ordinal) || p.StartsWith(@"\\.\", StringComparison.Ordinal) || p.StartsWith(@"\??\", StringComparison.Ordinal))
+        {
+            var rest = p[4..];
+            return !(IsDriveRooted(rest) || rest.StartsWith("Volume{", StringComparison.OrdinalIgnoreCase));
+        }
+
+        return p.StartsWith(@"\\", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 드라이브 문자의 연결 대상(QueryDosDevice 결과)이 네트워크인지.
+    /// 예: \Device\LanmanRedirector\;Z:000...\server\share, \Device\Mup\..., \??\UNC\server\share (subst).
+    /// 로컬 디스크(\Device\HarddiskVolume3)나 로컬 폴더 subst(\??\C:\foo)는 네트워크가 아니에요.
+    /// </summary>
+    public static bool IsNetworkDeviceTarget(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return false;
+        }
+
+        return NetworkRedirectors.Any(r => target.StartsWith(r, StringComparison.OrdinalIgnoreCase))
+            || target.Contains(@"\;", StringComparison.Ordinal); // 네트워크 리디렉터의 드라이브 연결 표시 (\;Z:)
+    }
+
+    /// <summary>네트워크 경로의 컴퓨터 이름 (\\server\share → server, Z:\ → Z:). 모르면 null.</summary>
+    public string? NetworkLocation(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var p = Paths.Expand(path.Trim().Trim('"').Trim()).Replace('/', '\\');
+        foreach (var prefix in new[] { @"\\?\UNC\", @"\\.\UNC\", @"\??\UNC\" })
+        {
+            if (p.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                p = @"\\" + p[prefix.Length..];
+                break;
+            }
+        }
+
+        if (p.StartsWith(@"\\", StringComparison.Ordinal) && !p.StartsWith(@"\\?\", StringComparison.Ordinal) && !p.StartsWith(@"\\.\", StringComparison.Ordinal))
+        {
+            var host = p[2..].Split('\\', 2)[0];
+            return host.Length > 0 ? host : null;
+        }
+
+        return DriveLetter(p) is { } d && NetworkDrives.Contains(d) ? d + ":" : null;
+    }
+
+    private static bool IsDriveRooted(string p) => p.Length >= 2 && p[1] == ':' && char.IsAsciiLetter(p[0]);
+
+    /// <summary>C:\x, \\?\C:\x, \??\C:\x의 드라이브 문자 (대문자). 없으면 null.</summary>
+    private static char? DriveLetter(string p)
+    {
+        if (p.StartsWith(@"\\?\", StringComparison.Ordinal) || p.StartsWith(@"\\.\", StringComparison.Ordinal) || p.StartsWith(@"\??\", StringComparison.Ordinal))
+        {
+            p = p[4..];
+        }
+
+        return IsDriveRooted(p) ? char.ToUpperInvariant(p[0]) : null;
     }
 
     /// <summary>일반 사용자 권한의 악성코드가 파일을 놓을 수 있는 위치인지.</summary>
