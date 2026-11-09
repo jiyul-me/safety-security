@@ -490,6 +490,38 @@ public class ShortcutTargetTests
         Assert.Equal(@"%USERPROFILE%\AppData\Local\Temp\ss-it-evil\upd.exe", info.IdListPath);
     }
 
+    /// <summary>
+    /// Windows 11(GitHub 러너)이 `C:\Users\runneradmin\AppData\Local\Temp\ss-it-evil\upd.exe`로 만든 바로가기의 실제 IDList 항목이에요.
+    /// 사용자 파일 루트 다음 첫 폴더(AppData)는 위임 항목(0x74, 'CFSF')으로 감싸져 있어요. 루트의 확장 데이터는 0으로 채웠어요.
+    /// </summary>
+    private static readonly string[] RealUserProfileIdList =
+    [
+        "1F 50 47 1A 03 59 72 3F A7 44 89 C5 55 95 FE 6B 30 EE " + string.Join(" ", Enumerable.Repeat("00", 38)),
+        "74 00 1C 00 43 46 53 46 16 00 31 00 00 00 00 00 63 5D 2A 93 12 00 41 70 70 44 61 74 61 00 00 00 74 1A 59 5E 96 DF D3 48 8D 67 17 33 BC EE 28 BA C5 CD FA DF 9F 67 56 41 89 47 C5 C7 6B C0 B6 7F 40 00 09 00 04 00 EF BE 63 5D 21 93 63 5D 30 93 2E 00 00 00 7E 97 00 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 D1 4C E7 00 41 00 70 00 70 00 44 00 61 00 74 00 61 00 00 00 40 00",
+        "31 00 00 00 00 00 69 5D 87 99 10 00 4C 6F 63 61 6C 00 3C 00 09 00 04 00 EF BE 63 5D 21 93 69 5D 87 99 2E 00 00 00 98 97 00 00 00 00 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 7A B9 71 00 4C 00 6F 00 63 00 61 00 6C 00 00 00 14 00",
+        "31 00 00 00 00 00 69 5D B7 99 10 00 54 65 6D 70 00 00 3A 00 09 00 04 00 EF BE 63 5D 21 93 69 5D B7 99 2E 00 00 00 9A 97 00 00 00 00 0B 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 4B 67 5F 00 54 00 65 00 6D 00 70 00 00 00 14 00",
+        "31 00 00 00 00 00 69 5D B8 99 10 00 53 53 2D 49 54 2D 7E 31 00 00 46 00 09 00 04 00 EF BE 69 5D B7 99 69 5D B8 99 2E 00 00 00 D1 90 06 00 00 00 06 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 72 18 13 01 73 00 73 00 2D 00 69 00 74 00 2D 00 65 00 76 00 69 00 6C 00 00 00 18 00",
+        "32 00 00 04 00 00 69 5D B8 99 20 00 75 70 64 2E 65 78 65 00 40 00 09 00 04 00 EF BE 69 5D B8 99 69 5D B8 99 2E 00 00 00 8F 80 04 00 00 00 06 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 72 18 13 01 75 00 70 00 64 00 2E 00 65 00 78 00 65 00 00 00 16 00",
+    ];
+
+    [Fact]
+    public void ParsesARealWindowsIdListWithADelegateItem()
+    {
+        var items = RealUserProfileIdList.Select(h => Convert.FromHexString(h.Replace(" ", string.Empty, StringComparison.Ordinal))).ToArray();
+        Assert.Equal([56, 128, 78, 76, 92, 84], items.Select(i => i.Length));
+        var info = LnkParser.Parse(new LnkFile { RawIdListItems = items }.Build())!;
+        Assert.Equal(@"%USERPROFILE%\AppData\Local\Temp\ss-it-evil\upd.exe", info.IdListPath);
+    }
+
+    [Fact]
+    public void DelegateItemWithoutCfsfIsNotGuessed()
+    {
+        var items = RealUserProfileIdList.Select(h => Convert.FromHexString(h.Replace(" ", string.Empty, StringComparison.Ordinal))).ToArray();
+        items[1][4] = (byte)'X'; // 서명 'CFSF'를 깨요
+        var info = LnkParser.Parse(new LnkFile { RawIdListItems = items }.Build())!;
+        Assert.Null(info.IdListPath);
+    }
+
     [Fact]
     public void UserProfileIdListExpandsToTheRealFolder()
     {

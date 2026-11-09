@@ -350,6 +350,25 @@ public static class LnkParser
                 continue;
             }
 
+            if (type == 0x74)
+            {
+                // 위임 항목('CFSF'): 사용자 폴더 바로 아래 폴더(예: AppData)를 Windows가 이렇게 감싸서 저장해요.
+                // 안에 보통 파일·폴더 항목이 들어 있고, 긴 이름은 뒤의 0xBEEF0004 블록에 있어요.
+                if (path is null)
+                {
+                    return null;
+                }
+
+                var name = DelegateEntryName(item);
+                if (name is null)
+                {
+                    return null;
+                }
+
+                path = path.EndsWith('\\') ? path + name : path + "\\" + name;
+                continue;
+            }
+
             if ((type & 0x70) == 0x30)
             {
                 // 파일·폴더 항목
@@ -427,6 +446,53 @@ public static class LnkParser
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// 위임 항목(종류 0x74, 서명 'CFSF')의 이름. 구조: 크기(2) 종류(1) ?(1) 데이터 크기(2) 'CFSF'(4) 안쪽 항목(자기 크기 포함)
+    /// 위임 GUID(16) 클래스 GUID(16) 확장 블록. 안쪽 항목이 파일·폴더 항목이 아니거나 이름을 확실히 못 읽으면 null이에요.
+    /// </summary>
+    private static string? DelegateEntryName(ReadOnlySpan<byte> item)
+    {
+        const int innerAt = 10;
+        if (item.Length < innerAt + 15 || item[6] != (byte)'C' || item[7] != (byte)'F' || item[8] != (byte)'S' || item[9] != (byte)'F')
+        {
+            return null;
+        }
+
+        var innerSize = BinaryPrimitives.ReadUInt16LittleEndian(item[innerAt..]);
+        if (innerSize < 15 || innerAt + innerSize > item.Length)
+        {
+            return null;
+        }
+
+        var inner = item.Slice(innerAt, innerSize);
+        var innerType = inner[2];
+        if ((innerType & 0x70) != 0x30)
+        {
+            return null;
+        }
+
+        const int nameOffset = 14;
+        var primary = (innerType & 0x04) != 0 ? ReadNullTerminatedUnicode(inner[nameOffset..]) : ReadNullTerminatedAnsi(inner[nameOffset..]);
+
+        // 확장 블록은 안쪽 항목과 GUID 두 개 뒤에 있어요. 위치가 다를 수 있어서 서명으로 찾아요.
+        string? longName = null;
+        for (var p = innerAt + innerSize; p + 8 <= item.Length; p += 2)
+        {
+            if (BinaryPrimitives.ReadUInt32LittleEndian(item[(p + 4)..]) == FileEntryExtensionSignature)
+            {
+                longName = ExtensionLongName(item, p);
+                break;
+            }
+        }
+
+        if (longName is not null && IsValidFileName(longName) && MatchesPrimary(longName, primary))
+        {
+            return longName;
+        }
+
+        return IsValidFileName(primary) && ((innerType & 0x04) != 0 || (!primary.Contains('~') && !HasNonAscii(primary))) ? primary : null;
     }
 
     /// <summary>0xBEEF0004 확장 블록의 긴 이름 (버전 3·7·8·9). 형식이 다르면 null이에요.</summary>
