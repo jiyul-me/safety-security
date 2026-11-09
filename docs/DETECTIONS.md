@@ -87,6 +87,21 @@
 | `DEF-001` | Defender·실시간 보호를 끄는 정책 | **높음** |
 | `DEF-002` | 제외 목록 (정책 제외, 관리자 검사에서는 로컬 제외도) | 드라이브 전체·사용자 폴더·실행 파일 확장자면 **높음**, 그 밖에는 보통 |
 
+## 디스코드 앱 변조 (`Discord`) — MITRE T1554
+
+디스코드 토큰·비밀번호를 훔치는 악성코드(토큰 그래버)는 디스코드가 켜질 때 실행하는 시작 파일을 고쳐서, 디스코드를 켤 때마다 다시 정보를 빼 가요. 게임 치트·크랙 파일에 섞여 퍼지는 경우가 많아요.
+사용자 전체 검사에서 `%LOCALAPPDATA%`의 `Discord`, `DiscordPTB`, `DiscordCanary`, `DiscordDevelopment` 폴더마다 `app-*\modules\discord_desktop_core-*\discord_desktop_core\`를 확인해요.
+폴더 목록과 1MB 이하의 작은 파일(`index.js`, `package.json`)만 읽고, 디스코드가 실행 중인지는 보지 않아요(다른 프로세스를 열지 않아요). 링크(정션·심볼릭 링크)는 따라가지 않아요.
+
+| ID | 내용 | 위험도 | 흔한 오탐 |
+|---|---|---|---|
+| `DISC-001` | `index.js`가 원래 한 줄(`module.exports = require('./core.asar');`)이 아님. 낱말 사이의 빈칸·줄바꿈, 맨 앞 BOM, 따옴표 종류, 끝의 세미콜론 차이는 원래 파일로 봐요 (문자열 안의 빈칸은 다른 파일이라 아니에요). `index.js`·`package.json`이 링크이거나 1MB보다 큼, `package.json`의 `main`·`exports`가 `index.js` 말고 다른 파일을 가리킴도 같아요. 토큰 탈취 도구의 첫 실행 표시인 `initiation` 폴더가 함께 있으면 이유에 적어요. 웹훅 주소·`BrowserWindow`·`webRequest`·`token` 같은 코드 조각, 앞부분 200자(제어 문자는 보이게 바꿔요), 크기, 수정 시각, SHA-256을 증거로 보여줘요 (난독화한 코드는 이런 글자가 없어도 똑같이 높음) | **높음**. 안쪽 `modules`·`discord_desktop_core` 폴더가 링크면(안쪽을 열지 않아요) 보통 | BetterDiscord가 아닌 디스코드 모드·테마 도구를 직접 설치한 경우 |
+| `DISC-002` | BetterDiscord 설치 프로그램이 쓰는 모양 그대로: 정확히 `%APPDATA%\BetterDiscord\data\betterdiscord.asar`를 불러온 뒤 원래 한 줄. 다른 경로·다른 이스케이프·덧붙인 코드는 `DISC-001` | 낮음 (`initiation` 폴더나 `package.json` 변경이 함께 있으면 `DISC-001` 높음) | BetterDiscord를 직접 설치한 경우 (정상) |
+
+- 같은 폴더에 다른 `.js` 파일이 있어도 `index.js`·`package.json`이 원래대로면 실행되지 않아서 따로 보고하지 않아요. 변조를 보고할 때 증거(같은 폴더의 다른 항목)에 함께 적어요.
+- 디스코드를 업데이트하면 `app-*` 폴더 이름이 바뀌어서 항목 ID도 바뀌어요. 예전 폴더가 남아 있으면 폴더마다 따로 확인해요.
+- `%LOCALAPPDATA%\Discord` 폴더 자체가 다른 곳으로 연결된 링크면 열지 않고 '확인하지 못한 것'에 적어요.
+
 ## 그 밖의 검사
 
 | ID | 내용 | 위험도 |

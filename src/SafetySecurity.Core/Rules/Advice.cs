@@ -68,6 +68,20 @@ public static class Advice
         "1) 메모장을 관리자 권한으로 열어 C:\\Windows\\System32\\drivers\\etc\\hosts를 확인하세요. "
         + "2) 보안 프로그램·Windows 업데이트·게임 사이트를 막거나 다른 IP로 보내는 줄은 악성코드가 넣은 경우가 많아요. 3) 고치기 전에 파일을 복사해 백업하세요.";
 
+    /// <summary>디스코드 시작 파일이 변조됐을 때 (DISC-001). <paramref name="folder"/>는 그 디스코드의 %LOCALAPPDATA% 폴더예요.</summary>
+    public static string Discord(string folder) =>
+        "1) 디스코드를 완전히 끄세요 (작업 표시줄 오른쪽 아래 디스코드 아이콘을 오른쪽 클릭 → 'Discord 종료'). "
+        + "2) 이런 악성코드는 보통 다른 곳에도 숨어 있어요. 먼저 Windows 보안 → 바이러스 및 위협 방지 → 검사 옵션 → 'Microsoft Defender 오프라인 검사'를 하고, 이 보고서의 다른 항목도 확인하세요. "
+        + $"3) 디스코드 폴더({folder})를 지우고 discord.com에서 받은 설치 파일로 다시 설치하세요. 이 프로그램은 파일을 고치거나 지우지 않아요. "
+        + "4) 휴대폰 등 다른 기기에서 디스코드 비밀번호를 바꾸고 2단계 인증을 켜세요. 비밀번호를 바꾸면 훔쳐 간 토큰을 더 이상 쓸 수 없어요. "
+        + "사용자 설정 → 기기에서 다른 기기도 모두 로그아웃시키세요. "
+        + "5) 같은 비밀번호를 쓰는 게임·메일 계정도 비밀번호를 바꾸세요. 이런 악성코드는 브라우저에 저장된 비밀번호도 함께 훔쳐 가는 경우가 많아요.";
+
+    /// <summary>BetterDiscord가 바꾼 시작 파일 (DISC-002).</summary>
+    public static string DiscordMod(string folder) =>
+        "BetterDiscord를 직접 설치했다면 괜찮아요. 이 항목을 숨겨 두면 다음부터 알리지 않아요 (디스코드를 업데이트하면 폴더 이름이 바뀌어서 다시 보일 수 있어요). "
+        + "직접 설치한 적이 없다면 변조(DISC-001)로 보고 이렇게 하세요: " + Discord(folder);
+
     public static string Defender =>
         "1) Windows 보안 → 바이러스 및 위협 방지 → 설정 관리 → 제외 항목에서 직접 추가한 것인지 확인하세요. "
         + "2) 기억에 없는 제외는 악성코드가 Defender를 피하려고 넣은 경우가 많아요. 확인 후 제거하세요.";

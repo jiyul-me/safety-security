@@ -279,7 +279,7 @@ public class ScopeCoverageTests
 
     public static TheoryData<ScanScope, bool, string[]> Expected => new()
     {
-        { ScanScope.User, false, ["ComHijack", "Autorun", "Service", "ScheduledTask", "Browser", "Defender", "Hosts", "DroppedFile"] },
+        { ScanScope.User, false, ["ComHijack", "Autorun", "Service", "ScheduledTask", "Browser", "Defender", "Hosts", "Discord", "DroppedFile"] },
         { ScanScope.User, true, ["Service", "ScheduledTask"] },
         { ScanScope.Admin, false, ["HiddenTask", "Defender", "Wmi"] },
 

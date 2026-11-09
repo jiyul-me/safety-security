@@ -93,6 +93,20 @@ $lnkCmd = Join-Path $startup 'ss-it-cmd.lnk'
 # SafetySecurity 이름을 흉내 낸 예약 작업 (루트의 예비 이름 꼴). 5년 뒤에만 실행되게 해서 실제로는 돌지 않아요.
 $fakeTaskName = 'SafetySecurity-ITFake'
 
+# 가짜 디스코드 폴더 (러너에 진짜 디스코드가 없을 때만 만들어요). index.js가 $null이면 만들지 않아요.
+$discordRoot = Join-Path $env:LOCALAPPDATA 'DiscordDevelopment'
+$discordCreated = $false
+$discordStock = "module.exports = require('./core.asar');"
+function New-DiscordCore([string]$App, [AllowNull()][string]$Index) {
+    $dir = Join-Path $discordRoot "$App\modules\discord_desktop_core-1\discord_desktop_core"
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $utf8 = New-Object Text.UTF8Encoding $false
+    [IO.File]::WriteAllBytes((Join-Path $dir 'core.asar'), (New-Object byte[] 2048))
+    [IO.File]::WriteAllText((Join-Path $dir 'package.json'), '{"name":"discord_desktop_core","version":"0.0.0","private":"true","main":"index.js"}', $utf8)
+    if ($Index) { [IO.File]::WriteAllText((Join-Path $dir 'index.js'), $Index, $utf8) }
+    return $dir
+}
+
 function New-Shortcut([string]$Path, [string]$Target, [string]$Arguments = '') {
     $shell = New-Object -ComObject WScript.Shell
     $s = $shell.CreateShortcut($Path)
@@ -247,6 +261,45 @@ try {
         Check ($fake[0].target -eq $evilExe) "look-alike task targets the program it runs (got $($fake[0].target))"
     }
     Unregister-ScheduledTask -TaskName $fakeTaskName -TaskPath '\' -Confirm:$false -ErrorAction SilentlyContinue
+
+    Write-Host "== 3b. Discord client injection"
+    if (Test-Path -LiteralPath $discordRoot) {
+        Write-Host "  (info) $discordRoot already exists on this machine; Discord checks skipped" -ForegroundColor Yellow
+    }
+    else {
+        $discordCreated = $true
+        # 원래 파일(CRLF로 끝나도 원래 파일이에요), 토큰 그래버처럼 코드를 넣은 파일, 다른 파일을 가리키는 심볼릭 링크.
+        $dStock = New-DiscordCore 'app-0.0.1' ($discordStock + "`r`n")
+        $dEvil = New-DiscordCore 'app-0.0.2' ("const hook = 'https://discord.com/api/webhooks/000/ss-it';`n" + $discordStock)
+        $dLink = New-DiscordCore 'app-0.0.3' $null
+        $linkMade = $false
+        try {
+            New-Item -ItemType SymbolicLink -Path (Join-Path $dLink 'index.js') -Target (Join-Path $dEvil 'index.js') -ErrorAction Stop | Out-Null
+            $linkMade = $true
+        }
+        catch { Write-Host "  (info) could not create a symbolic link on this runner: $($_.Exception.Message)" -ForegroundColor Yellow }
+        $rd = Scan
+        Check ($rd.Code -eq 0) 'scan with fake Discord folders exits 0'
+        $repd = Latest-Report
+        $disc = @($repd.findings | Where-Object { $_.category -eq 'Discord' })
+        $disc | ForEach-Object { Write-Host "    [$($_.severity)] $($_.ruleId) $($_.title) :: $($_.location)" }
+        Check (@($disc | Where-Object { $_.location.StartsWith($dStock, [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) 'stock Discord index.js is not reported'
+        $inj = @($disc | Where-Object { $_.location -eq (Join-Path $dEvil 'index.js') })
+        Check ($inj.Count -eq 1 -and $inj[0].ruleId -eq 'DISC-001' -and $inj[0].severity -eq 'High') "injected Discord index.js is DISC-001 High (got $(@($inj | ForEach-Object { "$($_.ruleId) $($_.severity)" }) -join ', '))"
+        if ($inj.Count -eq 1) {
+            $dHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $dEvil 'index.js')).Hash.ToLowerInvariant()
+            Check (@($inj[0].evidence | Where-Object { $_.key -eq 'SHA-256' -and $_.value -eq $dHash }).Count -eq 1) 'injected index.js evidence has its SHA-256'
+            Check (@($inj[0].evidence | Where-Object { $_.key -eq '의심스러운 코드' -and "$($_.value)" -like '*webhooks*' }).Count -eq 1) 'injected index.js evidence names the webhook code'
+        }
+        if ($linkMade) {
+            $lk = @($disc | Where-Object { $_.location -eq (Join-Path $dLink 'index.js') })
+            Check ($lk.Count -eq 1 -and $lk[0].severity -eq 'High') "symbolic-link index.js is High (found $($lk.Count))"
+            if ($lk.Count -eq 1) {
+                Check (@($lk[0].evidence | Where-Object { $_.key -eq 'SHA-256' }).Count -eq 0) 'symbolic-link index.js was not followed (no hash)'
+            }
+        }
+        Remove-Item -Recurse -Force -LiteralPath $discordRoot -ErrorAction SilentlyContinue
+    }
 
     Write-Host "== 4. second scan: same items are no longer new"
     $null = Scan
@@ -434,6 +487,7 @@ finally {
     Remove-Item -Force $lnkTemp, $lnkIdList, $lnkOk, $lnkCmd -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $fakeTaskName -TaskPath '\' -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force $evilDir -ErrorAction SilentlyContinue
+    if ($discordCreated) { Remove-Item -Recurse -Force -LiteralPath $discordRoot -ErrorAction SilentlyContinue }
 }
 
 if ($script:failures -gt 0) {

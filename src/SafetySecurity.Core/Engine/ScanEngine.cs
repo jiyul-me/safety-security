@@ -54,6 +54,7 @@ public static class ScanEngine
         new BrowserScanner(),
         new DefenderScanner(),
         new HostsScanner(),
+        new DiscordScanner(),
         new WmiScanner(),
         new DroppedFileScanner(),
     ];

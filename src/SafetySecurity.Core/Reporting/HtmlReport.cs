@@ -276,6 +276,7 @@ public static class HtmlReport
         "Hosts" => "hosts 파일",
         "Wmi" => "WMI",
         "DroppedFile" => "새 실행 파일",
+        "Discord" => "디스코드",
         _ => category,
     };
 
