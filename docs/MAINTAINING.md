@@ -59,4 +59,8 @@ Settings → **Code security**
 - 릴리스에는 `SafetySecurity-Setup-<버전>.exe`, zip(명령줄·시험용), `SHA256SUMS.txt`가 올라가요. Release 워크플로가 설치 프로그램을 만든 뒤 조용히 설치·제거해 보고 올려요.
 - `installer/SafetySecurity.iss`의 `AppId`는 **절대 바꾸지 마세요.** 바꾸면 Windows가 다른 프로그램으로 알아서 업데이트·제거가 꼬여요.
 - 설치 폴더(`{autopf}\SafetySecurity`)는 `src/SafetySecurity/Install/TaskInstaller.cs`의 폴더와 같아야 해요. 한쪽을 바꾸면 다른 쪽도 바꿔요.
-- 코드 서명 인증서가 없어서 SmartScreen 경고가 떠요. 오픈소스 무료 서명(예: SignPath Foundation)은 나중에 따로 검토해요.
+- 관리자 데이터 폴더(`{app}\data` = `C:\Program Files\SafetySecurity\data`)는 `src/SafetySecurity.Core/Install/DataRoots.cs`와 같아야 해요. 관리자 설치를 제거하면 `[UninstallDelete]`가 이 폴더를 지워요.
+- 예약 작업의 이름과 인자는 `src/SafetySecurity.Core/Install/OwnTasks.cs`에만 있어요. 인자를 바꾸면 `tools/Test-OnMyPC.ps1`의 `$ownArgs`도 같이 바꿔요. 다르면 설치된 작업이 위장 작업(`TASK-003`)으로 보고돼요.
+- `installer/*.iss`와 `*.ps1`은 UTF-8 BOM + CRLF로 저장해요 (`ScriptEncodingTests`가 검사해요).
+- 릴리스 실행이 실패하면 같은 실행을 **Re-run jobs**로 다시 돌려요. 자세한 내용은 [CONTRIBUTING.md의 릴리스](../CONTRIBUTING.md#릴리스)에 있어요.
+- 코드 서명 인증서가 없어서 SmartScreen 경고가 뜨고, 스마트 앱 컨트롤이 켜진 PC에는 설치할 수 없어요. 오픈소스 무료 서명(예: SignPath Foundation)은 나중에 따로 검토해요.

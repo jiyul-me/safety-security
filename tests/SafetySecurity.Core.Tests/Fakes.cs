@@ -120,6 +120,19 @@ public sealed class FakeFileSystem : IFileSystemView
 {
     private readonly Dictionary<string, (byte[] Data, FileMeta Meta)> _files = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _dirs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _links = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 다른 곳으로 연결된 폴더(정션·심볼릭 링크)를 흉내 내요. 있다고는 나오지만, 진짜 보기(WinFileSystemView)처럼
+    /// 부모 폴더 목록에는 보이지 않아요 (목록이 링크를 빼요).
+    /// </summary>
+    public FakeFileSystem LinkDirectory(string path)
+    {
+        Add(path + @"\placeholder.txt");
+        _files.Remove(path + @"\placeholder.txt");
+        _links.Add(path);
+        return this;
+    }
 
     public FakeFileSystem Add(string path, byte[]? data = null, DateTimeOffset? created = null, FileAttributes attributes = FileAttributes.Normal)
     {
@@ -145,13 +158,14 @@ public sealed class FakeFileSystem : IFileSystemView
     public IReadOnlyList<string> GetFiles(string directory)
     {
         var d = directory.TrimEnd('\\') + "\\";
-        return [.. _files.Keys.Where(k => k.StartsWith(d, StringComparison.OrdinalIgnoreCase) && !k[d.Length..].Contains('\\'))];
+        // 진짜 보기처럼 링크(reparse point) 파일은 목록에서 빼요.
+        return [.. _files.Where(kv => kv.Key.StartsWith(d, StringComparison.OrdinalIgnoreCase) && !kv.Key[d.Length..].Contains('\\') && (kv.Value.Meta.Attributes & FileAttributes.ReparsePoint) == 0).Select(kv => kv.Key)];
     }
 
     public IReadOnlyList<string> GetDirectories(string directory)
     {
         var d = directory.TrimEnd('\\') + "\\";
-        return [.. _dirs.Where(k => k.StartsWith(d, StringComparison.OrdinalIgnoreCase) && !k[d.Length..].Contains('\\'))];
+        return [.. _dirs.Where(k => k.StartsWith(d, StringComparison.OrdinalIgnoreCase) && !k[d.Length..].Contains('\\') && !_links.Contains(k))];
     }
 
     public byte[]? ReadPrefix(string path, int maxBytes) => _files.TryGetValue(path, out var f) ? f.Data.Take(maxBytes).ToArray() : null;
@@ -214,16 +228,23 @@ public sealed class TestEnv
         ["LOCALAPPDATA"] = @"C:\Users\jiyul\AppData\Local",
         ["TEMP"] = @"C:\Users\jiyul\AppData\Local\Temp",
         ["PUBLIC"] = @"C:\Users\Public",
+        ["ComSpec"] = @"C:\Windows\System32\cmd.exe",
     });
 
-    public ScanContext Context(ScanScope scope = ScanScope.User, bool elevated = false, IEnumerable<string>? self = null)
+    public ScanContext Context(
+        ScanScope scope = ScanScope.User,
+        bool elevated = false,
+        IEnumerable<string>? self = null,
+        IFileSystemView? files = null,
+        ISignatureVerifier? signatures = null,
+        IReadOnlySet<char>? networkDrives = null)
     {
-        var classifier = new PathClassifier(Paths);
+        var classifier = new PathClassifier(Paths) { NetworkDrives = networkDrives ?? new HashSet<char>() };
         return new ScanContext
         {
             Registry = Registry,
-            Files = Files,
-            Signatures = Signatures,
+            Files = files ?? Files,
+            Signatures = signatures ?? Signatures,
             Classifier = classifier,
             Now = Now,
             Scope = scope,

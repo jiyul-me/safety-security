@@ -21,8 +21,14 @@ public sealed class ScanResult
     /// <summary>실제로 끝까지 검사한 분류. 베이스라인은 이 분류만 갱신해요.</summary>
     public List<string> CompletedCategories { get; } = [];
 
-    /// <summary>검사한 분류의 한국어 이름.</summary>
+    /// <summary>검사한 분류의 한국어 이름 (일부만 확인한 분류는 "(일부만 확인)"을 붙여요).</summary>
     public List<string> CompletedNames { get; } = [];
+
+    /// <summary>
+    /// 검사는 했지만 일부를 읽지 못한 분류 (목록을 못 읽음, 일부 작업 XML이 깨짐, 파일이 너무 큼 등).
+    /// 찾은 항목은 베이스라인에 더하지만, 이번에 못 본 예전 항목은 지우지 않아요.
+    /// </summary>
+    public List<string> PartialCategories { get; } = [];
 
     public List<string> Coverage { get; } = [];
 
@@ -31,6 +37,9 @@ public sealed class ScanResult
     public string? AbortReason { get; set; }
 
     public int IgnoredCount { get; set; }
+
+    /// <summary>사용자가 숨겨서 보고서 본문에서 뺀 항목 (보고서 끝에 목록과 되돌리는 방법을 보여줘요).</summary>
+    public List<Finding> IgnoredFindings { get; } = [];
 }
 
 public static class ScanEngine
@@ -45,6 +54,7 @@ public static class ScanEngine
         new BrowserScanner(),
         new DefenderScanner(),
         new HostsScanner(),
+        new DiscordScanner(),
         new WmiScanner(),
         new DroppedFileScanner(),
     ];
@@ -79,8 +89,16 @@ public static class ScanEngine
                     }
                 }
 
-                result.CompletedCategories.Add(scanner.Category);
-                result.CompletedNames.Add(scanner.DisplayName);
+                if (ctx.Coverage.IncompleteCategories.Contains(scanner.Category))
+                {
+                    result.PartialCategories.Add(scanner.Category);
+                    result.CompletedNames.Add(scanner.DisplayName + " (일부만 확인)");
+                }
+                else
+                {
+                    result.CompletedCategories.Add(scanner.Category);
+                    result.CompletedNames.Add(scanner.DisplayName);
+                }
             }
             catch (ScanAbortedException ex)
             {

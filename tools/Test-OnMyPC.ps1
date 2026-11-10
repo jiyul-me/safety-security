@@ -133,9 +133,16 @@ try {
     $script:results.Add("sha256 $hash")
     $v = Invoke-SS @('version')
     Check ($v.Code -eq 0 -and $v.Text -match 'SafetySecurity \d') "버전 확인: $($v.Text.Trim())"
+    $h = Invoke-SS @('--help')
+    Check ($h.Code -eq 0 -and $h.Text -match '사용법') '도움말 (--help는 검사를 시작하지 않고 도움말을 보여줘요)'
     $script:results.Add("windows $([Environment]::OSVersion.Version) admin=$isAdmin")
     $k = Invoke-SS @('verify', "$env:SystemRoot\System32\kernel32.dll")
     Check ($k.Code -eq 0) 'Windows 파일 서명 확인 (kernel32.dll = 유효)'
+    # 기본 데이터 폴더: 관리자 권한이면 관리자만 쓸 수 있는 Program Files\SafetySecurity\data, 아니면 %LOCALAPPDATA%\SafetySecurity
+    # (status는 읽기만 하고 아무것도 만들지 않아요.)
+    $expectedData = if ($isAdmin) { Join-Path $env:ProgramFiles 'SafetySecurity\data' } else { Join-Path $env:LOCALAPPDATA 'SafetySecurity' }
+    $st = Invoke-SS @('status')
+    Check ($st.Text -match [regex]::Escape("데이터 폴더: $expectedData")) "기본 데이터 폴더 ($(if ($isAdmin) { '관리자 권한' } else { '일반 권한' })): $expectedData"
     $n = Invoke-SS @('test-notify', '--data-dir', $data)
     Check ($n.Code -eq 0) '알림 보내기'
     if (-not $NonInteractive) {
@@ -178,13 +185,38 @@ try {
     foreach ($g in $byRule) { $script:results.Add("rule $($g.Name) x$($g.Count)") }
     # 오탐 판단에 필요한 정보만 남겨요 (사용자 이름·PC 이름은 Redact로 가려요).
     foreach ($f in $real) {
-        $sig = @($f.evidence | Where-Object { $_.key -eq '서명' -or $_.key -eq 'DLL 서명' -or $_.key -eq '페이로드 서명' } | Select-Object -First 1)
-        $signer = @($f.evidence | Where-Object { $_.key -like '*서명자' } | Select-Object -First 1)
+        # cmd /c 등으로 감싼 명령은 감싼 cmd.exe가 아니라 실제로 실행되는 파일('실제 파일 서명')의 서명을 적어요.
+        $sig = @($f.evidence | Where-Object { $_.key -eq '실제 파일 서명' } | Select-Object -First 1)
+        if ($sig.Count -eq 0) { $sig = @($f.evidence | Where-Object { $_.key -eq '서명' -or $_.key -eq 'DLL 서명' -or $_.key -eq '페이로드 서명' } | Select-Object -First 1) }
+        $signer = @($f.evidence | Where-Object { $_.key -eq '실제 파일 서명자' } | Select-Object -First 1)
+        if ($signer.Count -eq 0) { $signer = @($f.evidence | Where-Object { $_.key -like '*서명자' } | Select-Object -First 1) }
         $sigText = if ($sig.Count -gt 0) { $sig[0].value } else { '-' }
         $signerText = if ($signer.Count -gt 0) { $signer[0].value } else { '-' }
         $script:results.Add((Redact "item  $($f.ruleId) $($f.severity) | $($f.title) | $($f.target) | 서명: $sigText | 서명자: $signerText"))
     }
     foreach ($c in $rep.coverage) { $script:results.Add((Redact "coverage $c")) }
+    # 바로가기 대상 위장(보이는 대상과 실제 실행 대상이 다름)은 실제 PC에서는 거의 없어야 해요. 있으면 오탐인지 확인해 주세요.
+    $disguised = @($real | Where-Object { @($_.reasons | Where-Object { "$_" -like '*실제 실행 대상이 달라요*' }).Count -gt 0 })
+    if ($disguised.Count -gt 0) { Note (Redact "바로가기 대상 위장으로 본 항목 $($disguised.Count)개: $(@($disguised | ForEach-Object { $_.location }) -join ', ')") }
+    # 설치된 SafetySecurity 작업(이름·실행 파일·인자가 설치가 만든 그대로인 것)을 위장 작업(TASK-003)으로 잘못 보면 안 돼요.
+    # (src/SafetySecurity.Core/Install/OwnTasks.cs의 이름·인자와 같아야 해요.)
+    $ownArgs = @{
+        'Logon' = 'scan --reason logon'; 'Daily' = 'scan --reason daily'; 'ServiceInstalled' = 'scan --reason service --quick'; 'Retry' = 'scan --reason retry'
+        'Admin' = 'scan --scope admin --reason retry'; 'ServiceInstalledAdmin' = 'scan --scope admin --reason service --quick'
+    }
+    $ownExes = @((Join-Path $env:LOCALAPPDATA 'Programs\SafetySecurity\SafetySecurity.exe'), (Join-Path $env:ProgramFiles 'SafetySecurity\SafetySecurity.exe'), $Exe)
+    $ownTasks = @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
+            $short = if ($_.TaskPath -eq '\SafetySecurity\') { $_.TaskName } elseif ($_.TaskPath -eq '\' -and $_.TaskName -like 'SafetySecurity-*') { $_.TaskName.Substring(15) } else { $null }
+            $actions = @($_.Actions)
+            $short -and $ownArgs.ContainsKey($short) -and $actions.Count -eq 1 -and ($ownExes -contains "$($actions[0].Execute)".Trim('"')) -and "$($actions[0].Arguments)" -eq $ownArgs[$short]
+        })
+    if ($ownTasks.Count -gt 0) {
+        $ownLocations = @($ownTasks | ForEach-Object { '작업 스케줄러' + $_.TaskPath + $_.TaskName })
+        $misflagged = @($rep.findings | Where-Object { $_.ruleId -eq 'TASK-003' -and $ownLocations -contains $_.location })
+        Check ($misflagged.Count -eq 0) "설치된 SafetySecurity 작업 $($ownTasks.Count)개를 위장 작업으로 잘못 보지 않음 $(@($misflagged | ForEach-Object { $_.location }) -join ', ')"
+    }
+    $selfFindings = @($rep.findings | Where-Object { $_.ruleId -eq 'TASK-003' -or $_.ruleId -eq 'TASK-004' })
+    if ($selfFindings.Count -gt 0) { Note (Redact "SafetySecurity 작업 확인: $(@($selfFindings | ForEach-Object { "$($_.ruleId) $($_.location)" }) -join ', ')") }
 
     if (-not $NonInteractive) {
         Say '  보고서를 열게요. 빨간 카드 2개가 가짜 항목이고, 나머지는 이 PC의 실제 항목이에요.'
@@ -206,10 +238,13 @@ try {
         Pause-Step '게임을 켰으면 Enter'
         Say '  20초 뒤에 검사를 시도해요. 지금 게임 화면으로 돌아가세요...' 'Yellow'
         Start-Sleep -Seconds 20
-        $d = Invoke-SS @('scan', '--reason', 'daily', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+        # 2단계에서 방금 전체 검사를 해서, 같은 기록으로는 하루 한 번 검사가 '방금 검사함'으로 건너뛰어요. 그래서 빈 기록 폴더를 따로 써요.
+        $gameData = Join-Path $work 'data-game'
+        New-Item -ItemType Directory -Force $gameData | Out-Null
+        $d = Invoke-SS @('scan', '--reason', 'daily', '--no-toast', '--data-dir', $gameData, '--report-dir', $reports)
         Check ($d.Code -eq 2) "게임 중 검사 미룸 (종료 코드 $($d.Code)) $($d.Text.Trim())"
         Pause-Step '이제 게임을 완전히 끄고 Enter'
-        $r = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $data, '--report-dir', $reports)
+        $r = Invoke-SS @('scan', '--reason', 'retry', '--no-toast', '--data-dir', $gameData, '--report-dir', $reports)
         Check ($r.Code -eq 0) "게임을 끈 뒤 미뤄둔 검사 실행 (종료 코드 $($r.Code))"
         $vg = Get-Service -Name vgc -ErrorAction SilentlyContinue
         if ($vg) { Note "Riot Vanguard 서비스 상태: $($vg.Status)" }
@@ -238,7 +273,7 @@ try {
                 $ran = $after -gt $before -and $after.Year -gt 2000
             }
             Check $ran '서비스 설치 이벤트(7045)로 사용자 작업이 실행됨'
-            if (-not $ran) { Note '실패하면 관리자 설치(install --admin)의 예비 작업이 대신 이 역할을 해요. 이 결과를 이슈로 알려 주세요.' }
+            if (-not $ran) { Note '실패하면 관리자 권한으로 설치했을 때 만들어지는 예비 작업(ServiceInstalledAdmin)이 대신 서비스를 검사해요. 이 결과를 이슈로 알려 주세요.' }
         }
         finally {
             & sc.exe delete SafetySecurityProbe | Out-Null

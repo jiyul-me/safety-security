@@ -53,6 +53,7 @@ M:System.Diagnostics.Process.GetProcessById(System.Int32);다른 프로세스 �
 M:System.Diagnostics.Process.GetProcessById(System.Int32,System.String);다른 프로세스 핸들 접근 금지
 M:System.Diagnostics.Process.GetProcessesByName(System.String);다른 프로세스 핸들 접근 금지
 M:System.Diagnostics.Process.GetProcessesByName(System.String,System.String);다른 프로세스 핸들 접근 금지
+M:System.Diagnostics.Process.Kill(System.Boolean);다른 프로세스 핸들 접근 금지 (프로세스 트리 종료는 모든 프로세스를 OpenProcess로 열어요). 우리 자식 프로세스만 Kill()로 종료
 M:System.IO.FileStream.#ctor(System.String,System.IO.FileMode);파일 쓰기 금지 (읽기는 FileAccess.Read를 명시)
 M:System.IO.StreamWriter.#ctor(System.String);파일 쓰기 금지
 M:System.IO.StreamWriter.#ctor(System.String,System.Boolean);파일 쓰기 금지

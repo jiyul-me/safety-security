@@ -287,7 +287,12 @@ public sealed class ComHijackScanner : IScanner
             if (shadows)
             {
                 reasons.Add($"HKLM에 이미 있는 COM 클래스{(className is null ? string.Empty : $"({className})")}를 HKCU에서 덮어써서 다른 파일을 불러오게 해요. COM 하이재킹의 전형적인 형태예요.");
-                if (!assessment.Exists)
+                if (assessment.NotChecked)
+                {
+                    // 네트워크 경로라 파일을 열지 않았어요. 평가 결과(보통 높음)를 그대로 써요.
+                    severity = assessment.Severity;
+                }
+                else if (!assessment.Exists)
                 {
                     severity = Severity.Medium;
                 }

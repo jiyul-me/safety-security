@@ -116,21 +116,20 @@ public sealed class AutorunScanner : IScanner
                 var evidence = new List<KeyValuePair<string, string>> { new("파일", file) };
                 if (name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
                 {
-                    var bytes = ctx.Files.ReadPrefix(file, 64 * 1024);
-                    var link = bytes is null ? null : LnkParser.Parse(bytes);
-                    if (link?.TargetPath is null)
+                    var bytes = ctx.Files.ReadPrefix(file, LnkParser.MaxReadBytes);
+                    if (bytes is null)
+                    {
+                        ctx.Coverage.Skipped("시작프로그램 바로가기 " + file, "파일을 읽지 못했어요 (잠겨 있거나 권한이 없어요).");
+                        continue;
+                    }
+
+                    var assessed = AssessShortcut(ctx, file, LnkParser.Parse(bytes), evidence);
+                    if (assessed is null)
                     {
                         continue;
                     }
 
-                    var cmd = Quote(link.TargetPath) + (link.Arguments is null ? string.Empty : " " + link.Arguments);
-                    evidence.Add(new("바로가기 대상", link.TargetPath));
-                    if (link.Arguments is not null)
-                    {
-                        evidence.Add(new("바로가기 인자", link.Arguments));
-                    }
-
-                    a = CommandAssessor.Assess(ctx, cmd);
+                    a = assessed;
                 }
                 else
                 {
@@ -164,6 +163,93 @@ public sealed class AutorunScanner : IScanner
         }
     }
 
+    /// <summary>
+    /// 시작프로그램 폴더의 바로가기를 평가해요. 대상 후보(환경 변수 블록, IDList, LinkInfo)를 모두 보고 가장 위험한 결과를 써요.
+    /// 보이는 대상과 실제 실행 대상이 다르면(위장) 보통 이상으로 올리고, 대상을 알 수 없으면 낮음으로 알려요.
+    /// </summary>
+    /// <returns>보고할 필요가 없으면(폴더 바로가기, MSI 광고 바로가기) null.</returns>
+    private static CommandAssessment? AssessShortcut(ScanContext ctx, string file, ShortcutInfo? link, List<KeyValuePair<string, string>> evidence)
+    {
+        var candidates = link is null ? [] : ShortcutTargets.Candidates(ctx, link, file);
+        if (candidates.Count == 0)
+        {
+            if (link?.IsAdvertised == true)
+            {
+                // MSI 광고 바로가기 (Office 등): 대상이 파일 경로가 아니라 설치 정보로 연결돼요.
+                return null;
+            }
+
+            var unknown = new CommandAssessment { Severity = Severity.Low };
+            unknown.Reasons.Add(link is null
+                ? "바로가기 파일 형식이 올바르지 않아서 대상을 확인하지 못했어요. 로그온할 때 무엇이 실행되는지 직접 확인하세요."
+                : "바로가기 대상을 확인하지 못했어요 (파일 경로가 아닌 대상이에요). 로그온할 때 무엇이 실행되는지 직접 확인하세요.");
+            if (link?.Arguments is { } unknownArgs)
+            {
+                evidence.Add(new("바로가기 인자", unknownArgs));
+            }
+
+            return unknown;
+        }
+
+        var primary = ShortcutTargets.Primary(ctx, candidates)!;
+        if (!ctx.Classifier.IsNetworkPath(primary) && !ctx.Files.FileExists(primary) && ctx.Files.DirectoryExists(primary))
+        {
+            // 폴더를 여는 바로가기예요. 프로그램을 실행하지 않아요.
+            return null;
+        }
+
+        var args = link!.Arguments is null ? string.Empty : " " + link.Arguments;
+        evidence.Add(new("바로가기 대상", primary));
+        if (link.Arguments is not null)
+        {
+            evidence.Add(new("바로가기 인자", link.Arguments));
+        }
+
+        var a = CommandAssessor.Assess(ctx, Quote(primary) + args);
+        var primaryKey = ctx.Classifier.Normalize(primary);
+        foreach (var other in candidates)
+        {
+            // 다른 후보도 실제로 있으면 평가해요. 없는 후보(이전 위치, 다른 Program Files 등)는 무시해요.
+            if (ctx.Classifier.Normalize(other) == primaryKey || !(ctx.Classifier.IsNetworkPath(other) || ctx.Files.FileExists(other)))
+            {
+                continue;
+            }
+
+            var b = CommandAssessor.Assess(ctx, Quote(other) + args);
+            if (!b.IsSelf)
+            {
+                CommandAssessor.MergeOther(a, b, "다른 대상 후보: ", "다른 대상 후보", other);
+            }
+        }
+
+        if (!a.IsSelf && ShortcutTargets.IsDisguised(ctx, candidates))
+        {
+            a.Severity = a.Severity is { } s ? SeverityExtensions.Max(s, Severity.Medium) : Severity.Medium;
+            a.Reasons.Add("바로가기에 표시되는 대상과 실제 실행 대상이 달라요. 바로가기를 위장하는 수법이에요.");
+            AddCandidateEvidence(link, evidence);
+        }
+
+        return a;
+    }
+
+    private static void AddCandidateEvidence(ShortcutInfo link, List<KeyValuePair<string, string>> evidence)
+    {
+        if (link.EnvironmentPath is { } env)
+        {
+            evidence.Add(new(link.PrefersEnvironmentPath ? "환경 변수 블록 대상 (Windows가 우선 사용)" : "환경 변수 블록 대상", env));
+        }
+
+        if (link.IdListPath is { } idList)
+        {
+            evidence.Add(new("IDList 대상", idList));
+        }
+
+        if (link.LinkInfoPath is { } linkInfo)
+        {
+            evidence.Add(new("LinkInfo 대상", linkInfo));
+        }
+    }
+
     private static void ScanWinlogon(ScanContext ctx, List<Finding> findings)
     {
         const string path = @"Software\Microsoft\Windows NT\CurrentVersion\Winlogon";
@@ -173,7 +259,7 @@ public sealed class AutorunScanner : IScanner
             {
                 ctx.Pacer.Step();
                 var shell = machine.GetString("Shell")?.Trim();
-                if (shell is not null && !IsDefaultShell(shell))
+                if (shell is not null && !IsDefaultShell(ctx, shell))
                 {
                     findings.Add(Winlogon(machine.FullPath, "Shell", shell, "Windows 셸이 explorer.exe가 아닌 다른 프로그램으로 바뀌었어요."));
                 }
@@ -210,10 +296,21 @@ public sealed class AutorunScanner : IScanner
         Advice = Advice.RegistryAutorun(keyPath, valueName),
     };
 
-    private static bool IsDefaultShell(string shell) =>
-        shell.Equals("explorer.exe", StringComparison.OrdinalIgnoreCase)
-        || shell.Equals("explorer.exe,", StringComparison.OrdinalIgnoreCase)
-        || shell.EndsWith(@"\explorer.exe", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// 기본 셸인지: explorer.exe 또는 %SystemRoot%\explorer.exe 하나뿐이어야 해요 (끝의 쉼표 하나는 괜찮아요).
+    /// C:\ProgramData\explorer.exe 같은 가짜 explorer나, 쉼표·공백으로 앞에 붙인 다른 프로그램은 기본값이 아니에요.
+    /// </summary>
+    private static bool IsDefaultShell(ScanContext ctx, string shell)
+    {
+        var parts = shell.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 1)
+        {
+            return false;
+        }
+
+        var n = ctx.Classifier.Normalize(parts[0]);
+        return n == "explorer.exe" || n == ctx.Classifier.Normalize(ctx.Paths.SystemRoot + @"\explorer.exe");
+    }
 
     private static bool IsDefaultUserinit(ScanContext ctx, string value)
     {
@@ -315,7 +412,13 @@ public sealed class AutorunScanner : IScanner
                 var a = CommandAssessor.Assess(ctx, debugger);
                 var severity = Severity.High;
                 var reasons = new List<string> { $"'{exe}'를 실행하면 대신 '{debugger}'가 실행되도록 IFEO 디버거가 설정돼 있어요." };
-                if (a.Severity is null && a.Target is not null && ctx.Files.FileExists(a.Target))
+                // a.Target은 cmd /c 등으로 감싼 경우 실제로 실행되는 파일이에요.
+                if (a.Target is not null && CommandLineHeuristics.IsCommandInterpreter(a.Target))
+                {
+                    // sethc.exe·utilman.exe → cmd.exe: 로그인 화면에서 관리자 명령 창을 여는 고전적인 백도어예요. 서명이 있어도 낮추지 않아요.
+                    reasons.Add("대신 실행되는 프로그램이 명령 프롬프트·스크립트 실행기예요. 접근성 도구(sethc.exe 등)를 바꿔치기하는 백도어 수법이에요.");
+                }
+                else if (a.Severity is null && a.Target is not null && ctx.Files.FileExists(a.Target))
                 {
                     // 서명된 도구 (예: Process Explorer가 작업 관리자를 대체할 때)
                     severity = Severity.Medium;

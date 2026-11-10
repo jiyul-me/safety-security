@@ -1,3 +1,4 @@
+using System.Text.Json;
 using SafetySecurity.Core.Abstractions;
 using SafetySecurity.Core.Engine;
 using SafetySecurity.Core.Model;
@@ -67,7 +68,7 @@ public sealed class BrowserScanner : IScanner
                     var parts = value.Split(';', 2);
                     var id = parts[0].Trim();
                     var updateUrl = parts.Length > 1 ? parts[1].Trim() : string.Empty;
-                    var offStore = updateUrl.Length > 0 && !updateUrl.Contains(storeHost, StringComparison.OrdinalIgnoreCase);
+                    var offStore = IsOffStore(updateUrl, storeHost);
                     findings.Add(new Finding
                     {
                         RuleId = "WEB-001",
@@ -114,25 +115,148 @@ public sealed class BrowserScanner : IScanner
             });
         }
 
-        using var settings = ctx.Registry.Open(hive, policyPath + @"\ExtensionSettings");
-        if (settings is not null && (settings.GetValueNames().Count > 0 || settings.GetSubKeyNames().Count > 0))
+        ScanExtensionSettings(ctx, findings, policy, browser, storeHost);
+    }
+
+    /// <summary>
+    /// ExtensionSettings 정책: 정책 키의 JSON 문자열 값(공식 형식)과, 확장 프로그램 ID마다 하위 키를 둔 형식을 모두 읽어요.
+    /// installation_mode가 force_installed·normal_installed인 항목만 보고해요. blocked·allowed 같은 제한은 정상적인 관리 설정이에요.
+    /// </summary>
+    private static void ScanExtensionSettings(ScanContext ctx, List<Finding> findings, IRegistryKeyView policy, string browser, string storeHost)
+    {
+        var location = policy.FullPath + @"\ExtensionSettings";
+        var json = policy.GetString("ExtensionSettings");
+        if (!string.IsNullOrWhiteSpace(json))
         {
-            var text = settings.GetString(null) ?? string.Join(", ", settings.GetSubKeyNames());
-            if (text.Contains("force_installed", StringComparison.OrdinalIgnoreCase) || text.Contains("normal_installed", StringComparison.OrdinalIgnoreCase))
+            var entries = ParseExtensionSettings(json);
+            if (entries is null)
             {
-                findings.Add(new Finding
+                // JSON 형식이 깨졌어요. 브라우저가 무시할 수도 있지만, 설치 설정이 들어 있으면 알려요.
+                if (json.Contains("force_installed", StringComparison.OrdinalIgnoreCase) || json.Contains("normal_installed", StringComparison.OrdinalIgnoreCase))
                 {
-                    RuleId = "WEB-003",
-                    Category = CategoryName,
-                    Severity = Severity.Medium,
-                    Title = $"{browser} ExtensionSettings 정책으로 확장 프로그램을 설치해요",
-                    Location = settings.FullPath,
-                    Target = text.Length > 300 ? text[..300] + "…" : text,
-                    Reasons = ["ExtensionSettings 정책에 force_installed/normal_installed 설정이 있어요."],
-                    Advice = Advice.Browser,
-                });
+                    findings.Add(ExtensionSettingsFinding(browser, location, "(JSON 형식 오류)", "force_installed", null, storeHost,
+                        "ExtensionSettings 정책 값의 JSON 형식이 올바르지 않지만 확장 프로그램 설치 설정(force_installed/normal_installed)이 들어 있어요."));
+                }
+            }
+            else
+            {
+                foreach (var (id, mode, updateUrl) in entries)
+                {
+                    if (IsInstallMode(mode))
+                    {
+                        findings.Add(ExtensionSettingsFinding(browser, location, id, mode!, updateUrl, storeHost, null));
+                    }
+                }
             }
         }
+
+        using var settings = policy.OpenSubKey("ExtensionSettings");
+        if (settings is null)
+        {
+            return;
+        }
+
+        foreach (var id in settings.GetSubKeyNames())
+        {
+            ctx.Pacer.Step();
+            using var sub = settings.OpenSubKey(id);
+            var mode = sub?.GetString("installation_mode")?.Trim();
+            if (sub is null || !IsInstallMode(mode))
+            {
+                continue;
+            }
+
+            findings.Add(ExtensionSettingsFinding(browser, sub.FullPath, id, mode!, sub.GetString("update_url")?.Trim(), storeHost, null));
+        }
+    }
+
+    /// <summary>ExtensionSettings JSON에서 (ID, installation_mode, update_url)을 꺼내요. JSON이 아니면 null이에요.</summary>
+    public static List<(string Id, string? Mode, string? UpdateUrl)>? ParseExtensionSettings(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var result = new List<(string, string?, string?)>();
+            foreach (var property in doc.RootElement.EnumerateObject())
+            {
+                if (property.Value.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                result.Add((property.Name, Str(property.Value, "installation_mode"), Str(property.Value, "update_url")));
+            }
+
+            return result;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        static string? Str(JsonElement e, string name) =>
+            e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()?.Trim() : null;
+    }
+
+    private static bool IsInstallMode(string? mode) =>
+        string.Equals(mode, "force_installed", StringComparison.OrdinalIgnoreCase) || string.Equals(mode, "normal_installed", StringComparison.OrdinalIgnoreCase);
+
+    private static Finding ExtensionSettingsFinding(string browser, string location, string id, string mode, string? updateUrl, string storeHost, string? reason)
+    {
+        var offStore = IsOffStore(updateUrl, storeHost);
+        var forced = mode.Equals("force_installed", StringComparison.OrdinalIgnoreCase);
+        var reasons = new List<string>
+        {
+            reason ?? (forced
+                ? "ExtensionSettings 정책으로 확장 프로그램을 강제 설치해요 (force_installed). 사용자가 지울 수 없어서 악성 확장 프로그램이 자주 쓰는 방식이에요."
+                : "ExtensionSettings 정책으로 확장 프로그램을 자동 설치해요 (normal_installed)."),
+        };
+        if (offStore)
+        {
+            reasons.Add("공식 웹 스토어가 아닌 곳에서 설치·업데이트돼요.");
+        }
+
+        var ids = string.Join(", ", id.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return new Finding
+        {
+            RuleId = "WEB-003",
+            Category = CategoryName,
+            Severity = offStore ? Severity.High : Severity.Medium,
+            Title = $"{browser} ExtensionSettings 정책으로 확장 프로그램을 설치해요",
+            Location = location,
+            Target = ids,
+            Reasons = reasons,
+            Evidence = [new("확장 프로그램 ID", ids), new("installation_mode", mode), new("업데이트 주소", string.IsNullOrEmpty(updateUrl) ? "(없음)" : updateUrl)],
+            Advice = Advice.Browser,
+        };
+    }
+
+    /// <summary>
+    /// 업데이트 주소가 공식 웹 스토어가 아닌지. 주소의 호스트 이름이 스토어 호스트와 정확히 같아야 해요
+    /// (https://evil.example/clients2.google.com/... 이나 clients2.google.com.evil.example 은 스토어가 아니에요).
+    /// 주소가 없으면 스토어에서 받아요. 주소 형식이 아니면 스토어가 아닌 것으로 봐요.
+    /// </summary>
+    public static bool IsOffStore(string? updateUrl, string storeHost)
+    {
+        if (string.IsNullOrWhiteSpace(updateUrl))
+        {
+            return false;
+        }
+
+        var url = updateUrl.Trim();
+        if (!url.Contains("://", StringComparison.Ordinal))
+        {
+            // 'clients2.google.com/service/update2/crx'처럼 https://를 빼고 쓴 주소
+            url = "https://" + url;
+        }
+
+        return !Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Host, storeHost, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ScanSystemProxy(ScanContext ctx, List<Finding> findings)
@@ -199,6 +323,7 @@ public sealed class BrowserScanner : IScanner
             ctx.Paths.AppData + @"\Microsoft\Internet Explorer\Quick Launch",
         };
 
+        var unresolved = 0;
         foreach (var folder in folders)
         {
             foreach (var file in ctx.Files.GetFiles(folder))
@@ -209,14 +334,25 @@ public sealed class BrowserScanner : IScanner
                 }
 
                 ctx.Pacer.Step();
-                var bytes = ctx.Files.ReadPrefix(file, 64 * 1024);
+                var bytes = ctx.Files.ReadPrefix(file, LnkParser.MaxReadBytes);
                 var link = bytes is null ? null : LnkParser.Parse(bytes);
-                if (link?.TargetPath is null || link.Arguments is null)
+                if (link?.Arguments is null)
                 {
                     continue;
                 }
 
-                var exe = Path.GetFileName(link.TargetPath.Replace('\\', '/'));
+                var target = ShortcutTargets.Primary(ctx, ShortcutTargets.Candidates(ctx, link, file));
+                if (target is null)
+                {
+                    if (!link.IsAdvertised)
+                    {
+                        unresolved++;
+                    }
+
+                    continue;
+                }
+
+                var exe = Path.GetFileName(target.Replace('\\', '/'));
                 if (!BrowserExecutables.Contains(exe))
                 {
                     continue;
@@ -255,12 +391,17 @@ public sealed class BrowserScanner : IScanner
                     Severity = severity,
                     Title = $"브라우저 바로가기에 이상한 인자가 있어요: {Path.GetFileName(file.Replace('\\', '/'))}",
                     Location = file,
-                    Target = link.TargetPath + " " + args,
+                    Target = target + " " + args,
                     Reasons = reasons,
-                    Evidence = [new("바로가기 대상", link.TargetPath), new("인자", args)],
+                    Evidence = [new("바로가기 대상", target), new("인자", args)],
                     Advice = "바로가기를 오른쪽 클릭 → 속성 → '대상' 칸에서 .exe 뒤에 붙은 내용을 확인하세요. 의심되면 바로가기를 지우고 새로 만드세요. " + Advice.Browser,
                 });
             }
+        }
+
+        if (unresolved > 0)
+        {
+            ctx.Coverage.Skipped("브라우저 바로가기", $"인자가 붙은 바로가기 {unresolved}개는 대상을 해석하지 못해서 브라우저 인자를 확인하지 못했어요.");
         }
     }
 }

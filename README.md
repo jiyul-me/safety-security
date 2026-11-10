@@ -43,18 +43,27 @@ PowerShell은 필요 없어요.
 2. 받은 파일을 더블클릭해요. "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 눌러요 ([왜 뜨나요?](#설치)).
 3. 설치 방식을 골라요.
    - **내 계정에만** (권장): 권한 요청 없이 바로 설치돼요.
-   - **관리자 권한으로**: Defender 제외 목록, 숨겨진 예약 작업, WMI 구독까지 검사해요. 권한 요청 창이 떠요.
-4. 마지막 화면에서 **지금 첫 검사하기**를 켜 둔 채 마침을 누르면, 검사가 끝난 뒤 보고서가 열려요.
+   - **관리자 권한으로**: Defender 제외 목록, 숨겨진 예약 작업, WMI 구독까지 검사해요. 권한 요청 창이 떠요. 관리자 계정으로 로그인했을 때만 고르세요 ([왜요?](#한계-꼭-읽어-주세요)).
+4. 추가 작업 화면의 **바탕화면 바로가기 만들기**는 기본으로 켜져 있어요. 필요 없으면 끄세요.
+5. 마지막 화면에서 **지금 첫 검사하기**를 켜 둔 채 마침을 누르면, 검사가 끝난 뒤 보고서가 열려요.
 
 > 설치 프로그램은 v0.2.0부터 있어요. 그 전 버전은 아래 [명령줄로 설치하기](#설치)를 보세요.
+>
+> v0.1.0을 zip으로 `install --admin` 해서 쓰고 있었다면, 설치 방식에서 **관리자 권한으로**를 고르세요. '내 계정에만'을 고르면 예전 관리자 검사 작업이 남아서 옛 exe로 계속 돌아요.
+
+> [!WARNING]
+> **스마트 앱 컨트롤**(Smart App Control)이 켜진 PC에는 아직 설치할 수 없어요. 설치 프로그램과 exe에 코드 서명이 없어서 Windows가 실행을 막아요 (SmartScreen 창과 달리 '실행' 버튼이 없어요).
+> 켜져 있는지는 Windows 보안 → 앱 및 브라우저 컨트롤 → 스마트 앱 컨트롤 설정에서 볼 수 있어요.
+> 이 프로그램을 쓰려고 스마트 앱 컨트롤을 **끄는 건 권장하지 않아요.** Windows 버전에 따라 한 번 끄면 Windows를 새로 설치(초기화)하기 전에는 다시 켤 수 없어요.
 
 그다음부터는 신경 쓸 필요가 없어요. 로그온할 때, 하루 한 번, 새 서비스가 설치될 때 알아서 잠깐 검사하고, 새로운 의심 항목이 있을 때만 알림을 띄워요.
 
 | 하고 싶은 것 | 방법 |
 |---|---|
-| 지금 검사하기 | 시작 메뉴 → **SafetySecurity** (검사하는 동안 알림이 뜨고, 끝나면 보고서가 열려요) |
-| 괜찮은 항목 숨기기 | 보고서에 적힌 대로 <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity ignore <ID>` |
-| 상태 보기 | <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity status` |
+| 지금 검사하기 | 바탕화면이나 시작 메뉴의 **SafetySecurity** (검사하는 동안 알림이 뜨고, 끝나면 보고서가 열려요) |
+| 괜찮은 항목 숨기기 | 보고서에 적힌 대로 <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity ignore <ID>` (항목의 위험도와 제목을 보여주고 한 번 더 물어봐요) |
+| 숨긴 항목 보기·되돌리기 | <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity ignored`, 되돌리려면 `safetysecurity unignore <ID>` |
+| 상태 보기 | <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity status` (마지막 검사, 미뤄둔 검사, 등록된 작업, 알림이 켜져 있는지) |
 | 제거하기 | 설정 → 앱 → 설치된 앱 → **SafetySecurity** → 제거 (예약 작업까지 지워요) |
 
 <p align="center">
@@ -70,11 +79,12 @@ PowerShell은 필요 없어요.
 | | |
 |---|---|
 | **평소엔 꺼져 있어요** | 상주 프로세스가 없어요. Windows 작업 스케줄러가 로그온, 하루 한 번, 새 서비스 설치 때 깨우면 검사하고 바로 끝나요. |
-| **게임을 방해하지 않아요** | 전체 화면 게임, 게임 프로세스, 높은 CPU 사용률이 보이면 검사를 미루고 30분 뒤에 다시 확인해요. 검사 중에 게임이 시작돼도 멈춰요. |
+| **게임을 방해하지 않아요** | 전체 화면 게임, 게임 프로세스, 높은 CPU 사용률이 보이면 검사를 미루고 30분 뒤에 다시 확인해요. 검사 중에 게임이 시작돼도 멈춰요. 하루 넘게 밀린 검사도 목록의 게임이 켜져 있는 동안에는 하지 않고, 밀렸다고 한 번 알려 줘요. |
 | **가벼워요** | 자기 프로세스만 백그라운드 모드(낮은 CPU·디스크 우선순위)와 효율 모드로 돌리고, 한 줄로(단일 스레드) 천천히 검사해요. 서명 확인 결과를 캐시해서 두 번째 검사부터는 훨씬 빨라요. |
-| **안티치트(뱅가드 등)와 충돌하지 않아요** | 커널 드라이버, 다른 프로세스 열기(`OpenProcess`), 메모리 접근, 코드 주입, 후킹을 **전혀** 쓰지 않아요. 실행 중인 프로그램은 핸들을 열지 않는 스냅샷으로 이름만 봐요. |
+| **안티치트(뱅가드 등)와 충돌하지 않아요** | 커널 드라이버, 다른 프로세스 열기(`OpenProcess`), 메모리 접근, 코드 주입, 후킹을 **전혀** 쓰지 않아요. 실행 중인 프로그램은 핸들을 열지 않는 스냅샷으로 이름만 봐요. 시간이 넘은 `schtasks`·`powershell`도 자기가 띄운 그 프로세스 하나만 끝내요. |
 | **읽기 전용** | 레지스트리는 읽기 권한으로만, 파일은 읽기 모드로만 열어요. 고치는 방법은 보고서에 적어 줄 뿐, 실제 수정은 사용자가 직접 해요. |
-| **오프라인** | 네트워크 코드가 없어요. 서명 확인 때 인증서 폐기 확인(CRL/OCSP)도 꺼 뒀어요. |
+| **오프라인** | 네트워크 코드가 없어요. 서명 확인 때 인증서 폐기 확인(CRL/OCSP)도 꺼 뒀어요. 자동 실행 항목이 공유 폴더·WebDAV·네트워크 드라이브의 파일을 가리켜도 열지 않고 경로만으로 판단해요. |
+| **스스로를 지켜요** | SafetySecurity 이름을 흉내 낸 예약 작업과 꺼진 SafetySecurity 작업을 알려요. 관리자 검사는 관리자만 바꿀 수 있는 폴더에 설정·기록을 두고, 자기가 띄우는 Windows 도구에 사용자 환경 변수를 넘기지 않아요. |
 
 이 약속들은 말로만 하는 게 아니라 코드로 강제돼요.
 
@@ -88,30 +98,36 @@ PowerShell은 필요 없어요.
 | 분류 | 보는 곳 | 특히 위험하게 보는 경우 |
 |---|---|---|
 | **COM 하이재킹** | `HKCU\Software\Classes\CLSID` (64·32비트)의 `InprocServer32`, `LocalServer32`, `TreatAs`, `ScriptletURL` | HKCU 항목이 같은 CLSID의 HKLM 항목을 **덮어쓰면서** 서명 없는 DLL이나 사용자 폴더의 DLL을 가리킴, 최근 7일 안에 생긴 키 |
-| 자동 실행 | Run/RunOnce 키, 시작프로그램 폴더(.lnk 대상 분석), Winlogon `Shell`/`Userinit`, `AppInit_DLLs`, `AppCertDlls`, IFEO 디버거, SilentProcessExit, 로그온 스크립트, cmd AutoRun | `powershell -enc`, `mshta`, `rundll32 javascript:` 같은 악용 패턴, 임시 폴더의 서명 없는 실행 파일 |
+| 자동 실행 | Run/RunOnce 키, 시작프로그램 폴더(.lnk 대상 분석), Winlogon `Shell`/`Userinit`, `AppInit_DLLs`, `AppCertDlls`, IFEO 디버거, SilentProcessExit, 로그온 스크립트, cmd AutoRun | `powershell -enc`, `mshta`, `rundll32 javascript:` 같은 악용 패턴, 임시 폴더의 서명 없는 실행 파일. `cmd /c`·`start`·PowerShell `Start-Process` 등으로 감싼 명령은 **실제로 실행되는 파일**로 판단하고, 보이는 대상과 실제 대상이 다른 바로가기도 알려요 |
 | 서비스·드라이버 | `HKLM\SYSTEM\CurrentControlSet\Services`의 `ImagePath`, `ServiceDll` | 사용자 폴더의 드라이버·서비스 DLL, 따옴표 없는 경로 |
-| 예약 작업 | `schtasks /query /xml`로 조회 | 숨김 작업 + 사용자 폴더 실행 파일, LOLBin 악용 |
+| 예약 작업 | `schtasks /query /xml`로 조회 | 숨김 작업 + 사용자 폴더 실행 파일, LOLBin 악용, SafetySecurity 이름을 흉내 낸 작업 |
 | 숨겨진 작업 (관리자) | `TaskCache\Tree` | 보안 설명자(SD)가 지워진 작업 (Tarrask 수법) |
 | 브라우저 | Chrome·Edge·Brave·Whale 정책, 시스템 프록시, 브라우저 바로가기 | 강제 설치 확장 프로그램, `--load-extension`·원격 디버깅 인자 |
 | Defender | 끄기 정책, 제외 목록 (로컬 제외 목록은 관리자) | 사용자 폴더·실행 파일 확장자 전체 제외 |
-| hosts 파일 | `drivers\etc\hosts` | 보안·업데이트·게임 사이트 차단이나 다른 IP로 보내기 |
+| hosts 파일 | `drivers\etc\hosts` | 보안·업데이트·게임 사이트 차단이나 다른 IP로 보내기 (텔레메트리·광고 주소만 막은 줄은 참고) |
+| **디스코드** | `%LOCALAPPDATA%`의 Discord·PTB·Canary·Development 앱의 `discord_desktop_core\index.js` | 토큰 탈취 악성코드가 고친 시작 파일 (게임 치트·크랙 파일로 많이 퍼져요). BetterDiscord는 '낮음' |
 | WMI 구독 (관리자) | `root\subscription` | CommandLine/ActiveScript consumer |
 | 새 실행 파일 | AppData, LocalAppData, Temp, ProgramData, Public (바로 아래 + 1단계) | 최근 14일 안에 생긴 서명 없는 실행 파일, `invoice.pdf.exe` 같은 이중 확장자, 확장자를 속인 실행 파일 |
 
 **오탐을 줄이는 방법**
 - 유효한 디지털 서명이 있으면 위험도를 낮춰요 (Windows 카탈로그 서명도 확인해요).
-- 첫 검사 결과를 **베이스라인**으로 저장해요. 그 뒤로는 *새로 생긴* 항목만 알림을 띄워요. 첫 검사에서는 이미 감염됐을 때를 대비해 '높음'만 알려요.
-- 직접 확인해서 괜찮은 항목은 숨길 수 있어요. 방법은 보고서의 항목마다 적혀 있어요 (설치 프로그램으로 설치했다면 <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity ignore <ID>`).
+- 첫 검사 결과를 **베이스라인**으로 저장해요. 그 뒤로는 *새로 생긴* 항목만 알림을 띄워요. 첫 검사에서는 이미 감염됐을 때를 대비해 '높음'만 알려요 (새 버전에 생긴 분류를 처음 검사할 때도 같아요).
+- 같은 자리의 항목이라도 더 위험해지거나 그 뒤의 파일이 바뀌면(서명, 서명자, SHA-256) '달라진 항목'으로 다시 알려요.
+- 직접 확인해서 괜찮은 항목은 숨길 수 있어요. 방법은 보고서의 항목마다 적혀 있어요 (설치 프로그램으로 설치했다면 <kbd>Win</kbd>+<kbd>R</kbd> → `safetysecurity ignore <ID>`). 숨김은 숨길 때의 상태에 묶여서, 그 뒤로 더 위험해지거나 파일이 바뀌면 다시 보여줘요.
 
 ## 설치
 
 **설치 프로그램 (권장)**: [빠른 시작](#빠른-시작)대로 `SafetySecurity-Setup-x.y.z.exe`를 실행하면 돼요.
-설치 프로그램은 실행 파일을 아래 위치에 두고 시작 메뉴·앱 목록에 등록해요. 작업 스케줄러 등록은 `SafetySecurity.exe install`이 해요.
+설치 프로그램은 실행 파일을 아래 위치에 두고 시작 메뉴·바탕화면(선택, 기본으로 켜짐)·앱 목록에 등록해요. 작업 스케줄러 등록은 `SafetySecurity.exe install`이 해요.
 
 | 설치 방식 | 실행 파일 위치 | 권한 요청 |
 |---|---|---|
 | 내 계정에만 | `%LOCALAPPDATA%\Programs\SafetySecurity` | 없음 |
 | 관리자 권한으로 | `C:\Program Files\SafetySecurity` | UAC 창 |
+
+설치 프로그램을 다시 실행하면 묻지 않고 **같은 방식으로 업데이트**해요. 설치 방식을 바꾸려면('내 계정에만' ↔ '관리자 권한으로') 설정 → 앱에서 먼저 제거한 뒤 다시 설치하고 방식을 고르세요.
+'내 계정에만' 설치를 제거할 때 "검사 기록과 보고서도 지울까요?"에 **아니요**를 고르면 검사 기록이 남아서 이어서 써요.
+명령줄의 `/ALLUSERS`·`/CURRENTUSER`로도 바꿀 수 없어요. 다른 방식으로 설치된 것이 있으면 설치 프로그램이 아무것도 바꾸지 않고 멈춰요 (두 개가 함께 있으면 한쪽을 제거할 때 다른 쪽의 자동 검사까지 지워져서요).
 
 **받은 파일이 진짜인지 확인하기 (권장)**
 ```powershell
@@ -123,6 +139,7 @@ gh attestation verify "$env:LOCALAPPDATA\Programs\SafetySecurity\SafetySecurity.
 
 > 코드 서명 인증서가 아직 없어서 처음 실행할 때 SmartScreen 경고("Windows의 PC 보호")가 떠요.
 > '추가 정보' → '실행'을 누르면 돼요. 위의 해시·출처 증명으로 파일이 진짜인지 먼저 확인하세요.
+> 같은 이유로 **스마트 앱 컨트롤**이 켜진 PC에는 아직 설치할 수 없어요 ([빠른 시작](#빠른-시작)의 경고를 보세요). 무료 오픈소스 코드 서명은 따로 검토하고 있어요.
 
 <details>
 <summary><b>명령줄로 설치하기 (zip)</b></summary>
@@ -133,46 +150,66 @@ gh attestation verify "$env:LOCALAPPDATA\Programs\SafetySecurity\SafetySecurity.
    .\SafetySecurity.exe install           # 내 계정에만
    .\SafetySecurity.exe install --admin   # 관리자 검사도 추가 (UAC 창이 떠요)
    ```
-3. 제거할 때는 `.\SafetySecurity.exe uninstall`(관리자 설치였다면 관리자 PowerShell)을 실행하고, 위 표의 폴더를 지워요.
+3. 제거할 때는 `.\SafetySecurity.exe uninstall`(관리자 설치였다면 관리자 PowerShell)을 실행하고, 위 표의 폴더를 지워요. 관리자 PowerShell에서 실행한 `uninstall --purge`는 관리자 검사 기록(`C:\Program Files\SafetySecurity\data`)만 지우고, 내 계정의 `%LOCALAPPDATA%\SafetySecurity`는 남겨요.
 
 </details>
 
 **관리자 권한으로 설치하면 좋은 점**
 - 실행 파일이 `Program Files`에 들어가서, 일반 권한 악성코드가 검사기 자체를 바꿔치기하기 어려워져요.
+- 관리자 검사의 설정·기록·보고서도 관리자만 바꿀 수 있는 `C:\Program Files\SafetySecurity\data`에 둬요.
 - Defender 로컬 제외 목록, 숨겨진 예약 작업, WMI 구독처럼 관리자만 읽을 수 있는 항목도 확인해요.
 
 설치하면 작업 스케줄러의 `\SafetySecurity\` 폴더에 아래 작업이 생겨요.
 
 | 작업 | 언제 | 하는 일 |
 |---|---|---|
-| `Logon` | 로그온 3분 뒤 | 전체 검사 |
-| `Daily` | 하루 한 번 (꺼져 있었으면 켜진 뒤) | 전체 검사 |
+| `Logon` | 로그온 3분 뒤 | 전체 검사 (2시간 안에 전체 검사를 끝냈고 미뤄둔 검사가 없으면 건너뛰어요) |
+| `Daily` | 하루 한 번 (꺼져 있었으면 켜진 뒤) | 전체 검사 (`Logon`과 같이 2시간 안이면 건너뛰어요) |
 | `ServiceInstalled` | 새 서비스 설치 (System 로그 이벤트 7045) | 서비스·예약 작업만 빠르게 검사 |
-| `Retry` | 30분마다 | 미뤄둔 검사가 있을 때만 검사, 없으면 0.1초 안에 종료 |
+| `Retry` | 30분마다 | 미뤄둔 검사(게임 때문에 미룬 검사, 다른 검사와 겹친 검사)가 있을 때만 검사, 없으면 0.1초 안에 종료 |
 | `Admin` (관리자 설치만) | 로그온 + 30분마다 확인, 하루 한 번 | 관리자 전용 항목 검사 |
+| `ServiceInstalledAdmin` (관리자 설치, 예비) | 새 서비스 설치 (이벤트 7045) | `ServiceInstalled`를 등록하지 못한 PC에만 만들어요. 서비스와 숨겨진 예약 작업을 관리자 권한으로 빠르게 검사 |
 
-모든 작업은 우선순위 7(낮음), 최대 15분 제한, 중복 실행 안 함으로 설정돼요.
+모든 작업은 우선순위 7(낮음), 최대 15분 제한, 중복 실행 안 함으로 설정돼요. 자동 검사가 다른 검사와 겹치면 버리지 않고 미뤄둔 검사로 남겨서 `Retry`가 해요.
+게임·전체 화면·CPU 때문에 미뤄둔 검사가 하루(24시간)를 넘으면, CPU·전체 화면 때문에는 더 미루지 않고 낮은 우선순위로 검사해요 (6시간에 한 번까지). 목록의 게임이 켜져 있으면 그래도 검사하지 않고 "검사가 밀렸어요" 알림을 한 번 띄워요.
 
 ## 사용법
 
 ```
-SafetySecurity.exe                    지금 검사하고 보고서 열기 (더블클릭과 같아요)
+SafetySecurity.exe                    지금 검사하고 보고서 열기 (더블클릭·바탕화면·시작 메뉴와 같아요)
 SafetySecurity.exe scan --force       게임 중이어도 지금 검사
-SafetySecurity.exe status             마지막 검사, 미뤄둔 검사, 등록된 작업
+SafetySecurity.exe status             마지막 검사, 미뤄둔 검사, 등록된 작업, 알림 설정
 SafetySecurity.exe report             마지막 보고서 열기
-SafetySecurity.exe ignore <ID>        항목 숨기기 (ID는 보고서에 있어요)
-SafetySecurity.exe verify <파일>      파일 하나의 디지털 서명 확인
+SafetySecurity.exe ignore <ID>        항목 숨기기 (ID는 보고서에 있어요. 앞 8자리 이상만 적어도 돼요)
+SafetySecurity.exe ignored            숨긴 항목 목록 (사용자·관리자 검사 모두)
+SafetySecurity.exe unignore <ID>      숨긴 항목을 다시 보이게 하기
+SafetySecurity.exe verify <파일>      파일 하나의 디지털 서명 확인 (네트워크 경로는 거절해요)
+SafetySecurity.exe test-notify        알림이 뜨는지 시험
+SafetySecurity.exe help               도움말 (--help, -h, /?도 돼요)
 SafetySecurity.exe uninstall [--purge]
 ```
 
-설치 프로그램으로 설치했다면 PowerShell 없이 <kbd>Win</kbd>+<kbd>R</kbd>에서 `safetysecurity status`처럼 실행할 수 있어요. 결과는 메시지 창으로 보여줘요.
+첫 인자는 항상 명령이에요. 모르는 옵션(예: `--foo`)을 주면 검사를 시작하지 않고 도움말을 보여줘요. 인자 없이 실행할 때만 바로 검사해요.
+`ignore`는 최근 검사 기록이나 보고서에 있는 ID만 받아요. 오타나 모르는 ID는 아무것도 저장하지 않고 거절하고, `--scope`를 적지 않아도 관리자 검사 항목을 스스로 찾아요 (그 항목은 관리자 권한을 요청해요).
+
+설치 프로그램으로 설치했다면 PowerShell 없이 <kbd>Win</kbd>+<kbd>R</kbd>에서 `safetysecurity status`처럼 실행할 수 있어요. 결과는 메시지 창으로 보여줘요. Win+R로 실행한 `scan`(예: `safetysecurity scan --force`)도 바탕화면 아이콘처럼 "검사하고 있어요" 알림을 띄우고, 끝나면 보고서를 열어요.
+직접 시작한 검사(인자 없는 실행, 바탕화면·시작 메뉴, `scan --force`)는 30분까지 해요 (자동 검사는 12분). 너무 오래 걸려 멈추면 그렇다고 알려 주고, 남은 검사는 `Retry` 작업이 백그라운드에서 마저 해요.
 
 의심 항목이 있으면 Windows 알림이 뜨고, 누르면 HTML 보고서가 열려요. 보고서에는 항목마다 아래 내용이 있어요.
 - **왜 의심스러운지**
 - **증거**: 서명 상태, 서명자, SHA-256, 파일·레지스트리 키가 만들어지거나 바뀐 시각
 - **직접 확인하는 법**: VirusTotal에 해시 검색하기(직접 하세요, 프로그램은 아무것도 올리지 않아요), 백업 명령(`reg export`), 끄거나 지우는 명령
 
-보고서와 기록은 `%LOCALAPPDATA%\SafetySecurity\`에 있어요 (`reports\`, `logs\scan.log`, `config.json`).
+Windows 알림이 꺼져 있으면(이 앱만, 모든 앱, 회사·학교 정책) 보고서의 '확인하지 못한 것'과 `status`가 알려 주고 켜는 법(설정 → 시스템 → 알림)을 안내해요. 집중 지원(방해 금지) 상태는 알 수 없어요.
+
+보고서와 기록은 데이터 폴더에 있어요 (`reports\`, `logs\scan.log`, `config.json`, `state*.json`).
+
+| 누가 실행했나요 | 데이터 폴더 |
+|---|---|
+| 일반 권한 (자동 검사 작업, 바탕화면·시작 메뉴, Win+R) | `%LOCALAPPDATA%\SafetySecurity\` |
+| 관리자 권한 (`Admin` 작업, 관리자 설치·제거, 관리자 PowerShell, UAC를 끈 PC) | `C:\Program Files\SafetySecurity\data\` (관리자만 바꿀 수 있어요) |
+
+관리자 검사는 자기 `config.json`과 숨김 목록을 따로 써요. 일반 사용자도 그 보고서는 읽을 수 있지만, 관리자 검사의 게임 목록·알림 기준·숨김 목록은 관리자만 바꿀 수 있어요. `status`는 두 곳을 모두 보여줘요. 예전 버전이 `%LOCALAPPDATA%\SafetySecurity`에 남긴 `state.admin.json`·`sigcache.admin.json`은 더 쓰지 않아서 지워도 돼요.
 
 ### 설정 (`config.json`)
 
@@ -189,8 +226,10 @@ SafetySecurity.exe uninstall [--purge]
 
 - **백신이 아니에요.** 파일 내용을 악성코드 시그니처와 비교하지 않아요. Windows Defender 같은 백신과 *함께* 쓰는 도구예요.
 - 결과는 "의심"이지 "확정"이 아니에요. 정상 프로그램도 걸릴 수 있고, 아주 정교한 악성코드는 못 찾을 수도 있어요.
-- 일반 사용자 설치에서는 같은 권한의 악성코드가 검사기 파일이나 기록(`%LOCALAPPDATA%\SafetySecurity`)을 바꿀 수 있어요. 그래서 관리자 설치를 권장해요.
+- 일반 사용자 설치에서는 같은 권한의 악성코드가 검사기 파일이나 기록(`%LOCALAPPDATA%\SafetySecurity`)을 바꿀 수 있어요. 그래서 관리자 설치를 권장해요. 관리자 설치는 실행 파일과 관리자 검사 기록을 관리자만 바꿀 수 있는 `C:\Program Files\SafetySecurity`에 둬요.
+- **표준(일반) 계정**에서 '관리자 권한으로'를 고르고 다른 관리자 계정의 비밀번호를 넣으면, 자동 검사 작업이 그 관리자 계정으로 등록돼서 지금 계정에서는 돌지 않아요. 표준 계정이라면 '내 계정에만'을 고르세요.
 - 커널 루트킷처럼 Windows 자체를 속이는 악성코드는 사용자 모드 도구로는 찾기 어려워요. 의심되면 Microsoft Defender 오프라인 검사를 해 보세요.
+- 알려진 한계 전체는 [SECURITY.md](SECURITY.md#알려진-한계--known-limitations)에 모아 뒀어요.
 
 ## 직접 빌드하기
 
@@ -239,12 +278,15 @@ docs/                      탐지 규칙, 구조, 시험 안내, 저장소 관�
 
 ## English
 
-**SafetySecurity** is a read-only, offline persistence scanner for Windows. It looks for the places malware uses to survive reboots, with a focus on per-user **COM hijacking** (`HKCU\Software\Classes\CLSID` entries that shadow system classes so that apps like Chrome load an attacker's DLL). It also checks Run keys, startup folders, Winlogon, IFEO, services, scheduled tasks, browser policies, Defender exclusions, the hosts file, WMI subscriptions, and recently dropped unsigned executables.
+**SafetySecurity** is a read-only, offline persistence scanner for Windows. It looks for the places malware uses to survive reboots, with a focus on per-user **COM hijacking** (`HKCU\Software\Classes\CLSID` entries that shadow system classes so that apps like Chrome load an attacker's DLL). It also checks Run keys, startup folders, Winlogon, IFEO, services, scheduled tasks, browser policies, Defender exclusions, the hosts file, WMI subscriptions, recently dropped unsigned executables, and **Discord client injection** by token stealers (`discord_desktop_core\index.js`). Commands wrapped in `cmd /c`, `start`, PowerShell `Start-Process` and similar launchers are judged by the file they actually run, and shortcuts that show one target but run another are reported.
 
 - **Not resident.** It is started by Task Scheduler at logon, once a day, and when a new service is installed (event 7045). It scans and exits.
 - **Game-friendly.** It defers while a fullscreen game, a known game process, or high CPU load is detected, and retries every 30 minutes. It runs in background mode (low CPU/IO priority) and single-threaded.
-- **Anti-cheat safe.** No kernel driver, no `OpenProcess`, no memory access, no injection, no hooks. Process names come from a Toolhelp snapshot that opens no handles.
-- **Read-only and offline.** It never modifies the system and has no network code. Authenticode checks run with revocation checks disabled and cache-only URL retrieval.
-- Both guarantees are enforced at build time (`BannedSymbols.txt`) and in tests (`ForbiddenApiTests`).
+- **Anti-cheat safe.** No kernel driver, no `OpenProcess`, no memory access, no injection, no hooks. Process names come from a Toolhelp snapshot that opens no handles. A timed-out `schtasks`/`powershell` child is ended through its own handle only; process-tree kills are banned.
+- **Read-only and offline.** It never modifies the system and has no network code. Authenticode checks run with revocation checks disabled and cache-only URL retrieval. Autoruns that point to UNC, WebDAV or mapped network drive paths are judged from the path alone and never opened.
+- **Self-protecting.** Scheduled tasks that only borrow SafetySecurity's name are reported (`TASK-003`), and disabled SafetySecurity tasks are flagged (`TASK-004`). Elevated runs keep their state, config and reports in `C:\Program Files\SafetySecurity\data` (admin-only) and start child tools with a fresh minimal environment.
+- These guarantees are enforced at build time (`BannedSymbols.txt`) and in tests (`ForbiddenApiTests`).
 
-Download `SafetySecurity-Setup-x.y.z.exe` from Releases and run it; no PowerShell needed. Choose *my account only* (no permission prompt) or *administrator* (also checks Defender exclusions, hidden tasks and WMI, and keeps the scanner in Program Files). Scan any time from the Start menu, and uninstall from Settings → Apps. From the zip you can still install on the command line with `SafetySecurity.exe install [--admin]`. Findings show up as a Windows toast that opens a self-contained HTML report. Each finding includes evidence (signature, signer, SHA-256, timestamps) and manual remediation steps.
+Download `SafetySecurity-Setup-x.y.z.exe` from Releases and run it; no PowerShell needed. Choose *my account only* (no permission prompt) or *administrator* (also checks Defender exclusions, hidden tasks and WMI, and keeps the scanner in Program Files). A desktop shortcut is created by default (you can untick it). Scan any time from the desktop or the Start menu, and uninstall from Settings → Apps. To switch install modes, uninstall first and run Setup again. From the zip you can still install on the command line with `SafetySecurity.exe install [--admin]`. Findings show up as a Windows toast that opens a self-contained HTML report. Each finding includes evidence (signature, signer, SHA-256, timestamps) and manual remediation steps. Hide a reviewed item with `ignore <ID>`, list hidden items with `ignored`, and undo with `unignore <ID>`; a hidden item comes back if it gets worse or its file changes.
+
+Because the installer and the exe are not code-signed yet, they cannot be installed on PCs with **Smart App Control** turned on. We do not recommend turning Smart App Control off for this: depending on the Windows version, once it is off it cannot be turned back on without reinstalling Windows.

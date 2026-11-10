@@ -15,7 +15,11 @@ public sealed class ServiceScanner : IScanner
 
     public string DisplayName => "서비스·드라이버";
 
-    public bool RunsIn(ScanScope scope, bool quick) => scope == ScanScope.User;
+    /// <summary>
+    /// 사용자 검사에서는 늘 해요. 관리자 범위에서는 빠른 검사(새 서비스 설치 때의 예비 작업 ServiceInstalledAdmin)에서만 해요.
+    /// 관리자 범위의 전체 검사(하루 한 번)는 사용자 검사가 이미 하는 서비스 검사를 되풀이하지 않아요 (같은 알림이 두 번 뜨지 않게).
+    /// </summary>
+    public bool RunsIn(ScanScope scope, bool quick) => scope == ScanScope.User || quick;
 
     public IEnumerable<Finding> Scan(ScanContext ctx)
     {
@@ -23,7 +27,7 @@ public sealed class ServiceScanner : IScanner
         using var root = ctx.Registry.Open(RegHive.LocalMachine, ServicesPath);
         if (root is null)
         {
-            ctx.Coverage.Skipped("서비스", "서비스 목록을 읽지 못했어요.");
+            ctx.Coverage.Incomplete(CategoryName, "서비스", "서비스 목록을 읽지 못했어요.");
             return findings;
         }
 

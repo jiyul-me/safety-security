@@ -30,7 +30,7 @@ public sealed class DefenderScanner : IScanner
             ScanExclusions(ctx, findings, @"SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions", "정책");
             if (!ctx.IsElevated)
             {
-                ctx.Coverage.Skipped("Defender 로컬 제외 목록", "관리자만 읽을 수 있어요. 'install --admin'으로 관리자 작업을 추가하면 확인해요.");
+                ctx.Coverage.Skipped("Defender 로컬 제외 목록", LocalExclusionsNote(ctx.AdminScanInstalled));
             }
         }
 
@@ -41,6 +41,14 @@ public sealed class DefenderScanner : IScanner
 
         return findings;
     }
+
+    /// <summary>
+    /// 사용자 검사가 로컬 제외 목록을 못 읽었을 때의 안내. 관리자 설치가 있으면 관리자 검사가 이미 확인하고,
+    /// 없으면 설치 방식을 고르는 화면에서 '관리자 권한으로'를 고르면 확인한다고 알려요 (명령을 직접 치라고 하지 않아요).
+    /// </summary>
+    public static string LocalExclusionsNote(bool adminScanInstalled) => adminScanInstalled
+        ? "관리자만 읽을 수 있어요. 관리자 검사(하루 한 번)에서 확인해요. 관리자 검사 보고서를 보세요."
+        : "관리자만 읽을 수 있어요. 설치할 때 '관리자 권한으로'를 고르면 확인해요.";
 
     private static void ScanPolicies(ScanContext ctx, List<Finding> findings)
     {

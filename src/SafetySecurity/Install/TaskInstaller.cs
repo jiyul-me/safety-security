@@ -16,15 +16,26 @@ namespace SafetySecurity.Install;
 internal static class TaskInstaller
 {
     public const string ExeName = "SafetySecurity.exe";
-    private const string FallbackPrefix = @"\SafetySecurity-";
-    private static readonly string[] AllTaskNames = ["Logon", "Daily", "ServiceInstalled", "Retry", "Admin", "ServiceInstalledAdmin"];
 
     public static string UserInstallDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "SafetySecurity");
 
     public static string AdminInstallDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "SafetySecurity");
 
+    /// <summary>관리자 설치(Program Files의 exe나 보호된 데이터 폴더)가 있는지.</summary>
+    public static bool AdminInstallExists() =>
+        File.Exists(Path.Combine(AdminInstallDir, ExeName)) || Directory.Exists(DataStore.AdminRoot);
+
     public static int Install(bool admin, DataStore store, Output output)
     {
+        if (admin && InstalledBySetup() && RunsFromLocalAppData())
+        {
+            // 설치 프로그램으로 '내 계정에만' 설치했는데 install --admin을 직접 실행했어요. 여기서 Program Files에 복사하고
+            // 관리자 작업을 만들면, 설치 프로그램이 모르는 파일과 작업이라 앱 목록에서 제거해도 남아요. 그래서 아무것도 하지 않아요.
+            output.Line("설치 프로그램으로 '내 계정에만' 설치한 SafetySecurity예요. 관리자 검사를 쓰려면 설정 → 앱에서 SafetySecurity를 제거한 뒤, 설치 프로그램을 다시 실행해 '관리자 권한으로 설치'를 골라 주세요.");
+            output.Line("아무것도 바꾸지 않았어요.");
+            return 1;
+        }
+
         var elevated = Environment.IsPrivilegedProcess;
         if (admin && !elevated)
         {
@@ -58,7 +69,7 @@ internal static class TaskInstaller
             if (!ok)
             {
                 failures++;
-                if (spec.Name == "ServiceInstalled")
+                if (spec.Name == OwnTasks.ServiceInstalled.Name)
                 {
                     serviceTaskOk = false;
                 }
@@ -78,16 +89,23 @@ internal static class TaskInstaller
         if (failures == 0)
         {
             output.Line("설치 완료! 평소엔 꺼져 있고, 로그온·하루 한 번·서비스 설치 때만 잠깐 검사해요.");
-            output.Line("지금 바로 검사하려면: " + target + " scan");
+            // 인자 없이 실행하면 더블클릭처럼 지금 검사하고 보고서를 열어요 (Win+R·바로가기에서도 결과가 보여요).
+            output.Line("지금 바로 검사하려면 시작 메뉴·바탕화면의 SafetySecurity를 누르거나 이 파일을 실행하세요: " + target);
         }
         else
         {
             output.Line($"작업 {failures}개를 등록하지 못했어요. 위 메시지를 확인해 주세요.");
         }
 
-        if (!admin)
+        if (!admin && !InstalledBySetup())
         {
             output.Line("팁: 관리자 설치(install --admin)를 하면 Defender 제외 목록·숨겨진 작업·WMI 구독도 확인하고, 검사기 파일도 악성코드가 바꾸기 어려운 Program Files에 둬요.");
+        }
+        else if (!admin && RunsFromLocalAppData())
+        {
+            // 설치 프로그램으로 '내 계정에만' 설치한 exe에서는 install --admin을 거절해요 (위). 설치 프로그램도 설치 방식을 바꿔 덮어쓰지 않아서,
+            // 앱 목록에서 제거한 뒤 다시 설치하는 방법을 알려요.
+            output.Line("팁: 관리자 권한으로 설치하면 Defender 제외 목록·숨겨진 작업·WMI 구독도 확인하고, 검사기 파일도 악성코드가 바꾸기 어려운 Program Files에 둬요. 설정 → 앱에서 SafetySecurity를 제거한 뒤 설치 프로그램을 다시 실행해 '관리자 권한으로 설치'를 고르세요.");
         }
 
         return failures == 0 ? 0 : 1;
@@ -97,9 +115,9 @@ internal static class TaskInstaller
     {
         var deleted = 0;
         var denied = 0;
-        foreach (var name in AllTaskNames)
+        foreach (var task in OwnTasks.All)
         {
-            foreach (var full in new[] { TaskXmlBuilder.Folder + name, FallbackPrefix + name })
+            foreach (var full in OwnTasks.FullNames(task.Name))
             {
                 if (!TaskExists(full))
                 {
@@ -133,6 +151,11 @@ internal static class TaskInstaller
         {
             store.DeleteAll();
             output.Line("검사 기록·보고서 폴더를 지웠어요: " + store.Root);
+            if (store.IsAdminRoot)
+            {
+                // 관리자 권한으로는 사용자가 쓸 수 있는 폴더를 지우지 않아요 (링크를 심어 다른 파일을 지우게 할 수 있어서요).
+                output.Line(@"내 계정의 검사 기록 폴더(%LOCALAPPDATA%\SafetySecurity)는 관리자 권한으로 지우지 않아요. 필요하면 관리자 권한 없이 'uninstall --purge'를 실행하거나 직접 지워 주세요.");
+            }
         }
 
         output.Line($"작업 {deleted}개를 지웠어요.");
@@ -152,16 +175,24 @@ internal static class TaskInstaller
     }
 
     public static List<string> ListInstalledTasks() =>
-        [.. AllTaskNames.SelectMany(n => new[] { TaskXmlBuilder.Folder + n, FallbackPrefix + n }).Where(TaskExists)];
+        [.. OwnTasks.All.SelectMany(t => OwnTasks.FullNames(t.Name)).Where(TaskExists)];
 
     private static bool CreateTask(TaskSpec spec, DataStore store, Output output)
     {
-        var xmlPath = Path.Combine(store.Root, "task-" + spec.Name + ".xml");
+        // 임시 XML은 데이터 폴더에 둬요. 관리자 권한이면 데이터 폴더가 관리자만 쓸 수 있는 Program Files\SafetySecurity\data라서,
+        // 사용자 권한 프로그램이 schtasks가 읽기 전에 XML을 바꿔치기할 수 없어요.
+        // 이름을 매번 새로 짓고 CreateNew로 만들어서, 미리 놓아 둔 파일이나 링크를 따라가지 않아요.
+        var xmlPath = Path.Combine(store.Root, $"task-{spec.Name}-{Guid.NewGuid():N}.xml");
         Directory.CreateDirectory(store.Root);
         try
         {
-            File.WriteAllText(xmlPath, spec.Xml, Encoding.Unicode);
-            foreach (var name in new[] { TaskXmlBuilder.Folder + spec.Name, FallbackPrefix + spec.Name })
+            using (var fs = new FileStream(xmlPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                fs.Write(Encoding.Unicode.GetPreamble());
+                fs.Write(Encoding.Unicode.GetBytes(spec.Xml));
+            }
+
+            foreach (var name in OwnTasks.FullNames(spec.Name))
             {
                 var r = Schtasks(["/create", "/tn", name, "/xml", xmlPath, "/f"]);
                 if (r?.ExitCode == 0)
@@ -185,11 +216,26 @@ internal static class TaskInstaller
             {
                 File.Delete(xmlPath);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // 임시 XML을 못 지워도 설치에는 영향이 없어요 (자기 데이터 폴더 안의 파일이에요).
             }
         }
+    }
+
+    /// <summary>
+    /// 지금 실행 중인 exe가 %LOCALAPPDATA% 안(설치 프로그램의 '내 계정에만' 설치 위치: %LOCALAPPDATA%\Programs\SafetySecurity)에 있는지.
+    /// 관리자 설치는 Program Files에 있어서 여기에 해당하지 않아요.
+    /// </summary>
+    private static bool RunsFromLocalAppData()
+    {
+        if (Environment.ProcessPath is not { } exe)
+        {
+            return false;
+        }
+
+        var local = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)).TrimEnd('\\') + "\\";
+        return local.Length > 1 && Path.GetFullPath(exe).StartsWith(local, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Inno Setup 설치 프로그램은 exe 옆에 제거 프로그램(unins000.exe)을 둬요.</summary>
@@ -217,7 +263,11 @@ internal static class TaskInstaller
         key.SetValue("ShowInSettings", 1, RegistryValueKind.DWord);
     }
 
-    private static int Relaunch(string arguments)
+    /// <summary>
+    /// 이 exe를 관리자 권한으로 다시 실행하고 끝날 때까지 기다려요 (UAC 창이 떠요). 취소하면 1을 돌려줘요.
+    /// 인자는 프로그램이 만든 고정된 값만 넘겨요.
+    /// </summary>
+    public static int Relaunch(string arguments)
     {
         try
         {

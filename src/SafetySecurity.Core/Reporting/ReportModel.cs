@@ -38,6 +38,9 @@ public sealed class ReportDocument
 
     public List<ReportFinding> Findings { get; set; } = [];
 
+    /// <summary>사용자가 숨겨서 위 목록에서 뺀 항목 (되돌리는 방법과 함께 보고서 끝에 보여줘요).</summary>
+    public List<ReportIgnored> Ignored { get; set; } = [];
+
     public static ReportDocument From(ScanResult result, NotifyDecision decision, string version, string? computer) => new()
     {
         Version = version,
@@ -54,6 +57,32 @@ public sealed class ReportDocument
         Completed = [.. result.CompletedNames],
         Coverage = [.. result.Coverage],
         Findings = [.. result.Findings.Select(ReportFinding.From)],
+        Ignored = [.. result.IgnoredFindings.Select(ReportIgnored.From)],
+    };
+}
+
+public sealed class ReportIgnored
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string RuleId { get; set; } = string.Empty;
+
+    public string Category { get; set; } = string.Empty;
+
+    public Severity Severity { get; set; }
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Location { get; set; } = string.Empty;
+
+    public static ReportIgnored From(Finding f) => new()
+    {
+        Id = f.Id,
+        RuleId = f.RuleId,
+        Category = f.Category,
+        Severity = f.Severity,
+        Title = f.Title,
+        Location = f.Location,
     };
 }
 
@@ -68,6 +97,12 @@ public sealed class ReportFinding
     public Severity Severity { get; set; }
 
     public bool IsNew { get; set; }
+
+    /// <summary>지난 검사에도 있던 항목인데 달라져서 다시 알리면 무엇이 달라졌는지. 처음 보는 항목은 null.</summary>
+    public string? ChangeNote { get; set; }
+
+    /// <summary>숨긴 항목인데 숨긴 뒤로 달라져서 다시 보여주면 그 이유.</summary>
+    public string? IgnoreNote { get; set; }
 
     public string Title { get; set; } = string.Empty;
 
@@ -88,6 +123,8 @@ public sealed class ReportFinding
         Category = f.Category,
         Severity = f.Severity,
         IsNew = f.IsNew,
+        ChangeNote = f.ChangeNote,
+        IgnoreNote = f.IgnoreNote,
         Title = f.Title,
         Location = f.Location,
         Target = f.Target,

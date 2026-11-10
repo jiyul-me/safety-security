@@ -212,15 +212,40 @@ public class TaskTests
     }
 
     [Fact]
-    public void FlagsHiddenTaskInUserFolder_SkipsSelf()
+    public void FlagsHiddenTaskInUserFolder_AndTaskOnlyNamedLikeOurs()
     {
         var env = new TestEnv { TasksXml = Xml };
         env.Files.Add(@"C:\Windows\system32\defrag.exe");
         env.Signatures.Signed(@"C:\Windows\system32\defrag.exe");
         env.Files.Add(@"C:\Users\jiyul\AppData\Roaming\odu\odu.exe");
-        var f = Assert.Single(new ScheduledTaskScanner().Scan(env.Context()));
-        Assert.Equal(@"작업 스케줄러\OneDriveUpdater", f.Location);
-        Assert.Equal(Severity.High, f.Severity);
+        var findings = new ScheduledTaskScanner().Scan(env.Context()).ToList();
+        Assert.Equal(2, findings.Count);
+        var hidden = Assert.Single(findings, f => f.Location == @"작업 스케줄러\OneDriveUpdater");
+        Assert.Equal("TASK-001", hidden.RuleId);
+        Assert.Equal(Severity.High, hidden.Severity);
+
+        // 이름만 \SafetySecurity\Daily이고 다른 프로그램(C:\Users\Public\x.exe)을 실행하면 건너뛰지 않고 위장으로 알려요.
+        var lookAlike = Assert.Single(findings, f => f.Location == @"작업 스케줄러\SafetySecurity\Daily");
+        Assert.Equal("TASK-003", lookAlike.RuleId);
+        Assert.Equal(Severity.High, lookAlike.Severity);
+        Assert.Equal(@"C:\Users\Public\x.exe", lookAlike.Target);
+    }
+
+    [Fact]
+    public void TaskNamedLikeOursThatRunsOurExeIsSkipped()
+    {
+        const string exe = @"C:\Users\jiyul\AppData\Local\Programs\SafetySecurity\SafetySecurity.exe";
+        const string xml = """
+<Tasks>
+<!-- \SafetySecurity\Daily -->
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Actions Context="Author"><Exec><Command>"C:\Users\jiyul\AppData\Local\Programs\SafetySecurity\SafetySecurity.exe"</Command><Arguments>scan --reason daily</Arguments></Exec></Actions>
+</Task>
+</Tasks>
+""";
+        var env = new TestEnv { TasksXml = xml };
+        env.Files.Add(exe, TestEnv.FakePe());
+        Assert.Empty(new ScheduledTaskScanner().Scan(env.Context(self: [exe])));
     }
 
     [Fact]

@@ -20,6 +20,7 @@ public static class HtmlReport
         var medium = doc.Findings.Count(f => f.Severity == Severity.Medium);
         var low = doc.Findings.Count(f => f.Severity <= Severity.Low);
         var newCount = doc.Findings.Count(f => f.IsNew);
+        var anyChanged = doc.Findings.Any(f => f.IsNew && f.ChangeNote is not null);
 
         sb.Append("<!doctype html>\n<html lang=\"ko\">\n<head>\n<meta charset=\"utf-8\">\n");
         sb.Append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:\">\n");
@@ -43,7 +44,7 @@ public static class HtmlReport
         Tile(sb, "높음", high, "high");
         Tile(sb, "보통", medium, "medium");
         Tile(sb, "낮음·참고", low, "low");
-        Tile(sb, "새 항목", newCount, "new");
+        Tile(sb, anyChanged ? "새·달라진 항목" : "새 항목", newCount, "new");
         sb.Append("</section>\n");
 
         sb.Append("<p class=\"note\">이 프로그램은 <strong>읽기 전용</strong>이에요. 아무것도 지우거나 고치지 않았고 인터넷도 쓰지 않았어요. ")
@@ -76,11 +77,27 @@ public static class HtmlReport
             sb.Append("<span class=\"badge ").Append(sev).Append("\">").Append(E(f.Severity.ToKorean())).Append("</span>");
             if (f.IsNew)
             {
-                sb.Append("<span class=\"badge new\">새 항목</span>");
+                sb.Append("<span class=\"badge new\">").Append(f.ChangeNote is null ? "새 항목" : "달라진 항목").Append("</span>");
+            }
+
+            if (f.IgnoreNote is not null)
+            {
+                sb.Append("<span class=\"badge new\">숨김 풀림</span>");
             }
 
             sb.Append("<span class=\"cat\">").Append(E(CategoryKorean(f.Category))).Append(" · ").Append(E(f.RuleId)).Append("</span></div>\n");
-            sb.Append("<h3>").Append(E(f.Title)).Append("</h3>\n<dl>");
+            sb.Append("<h3>").Append(E(f.Title)).Append("</h3>\n");
+            if (f.ChangeNote is not null)
+            {
+                sb.Append("<p class=\"change\">지난 검사와 달라졌어요: ").Append(E(f.ChangeNote)).Append("</p>\n");
+            }
+
+            if (f.IgnoreNote is not null)
+            {
+                sb.Append("<p class=\"change\">").Append(E(f.IgnoreNote)).Append("</p>\n");
+            }
+
+            sb.Append("<dl>");
             Row(sb, "위치", f.Location, code: true);
             if (f.Target is not null)
             {
@@ -137,7 +154,19 @@ public static class HtmlReport
             sb.Append("</ul>");
         }
 
-        if (doc.IgnoredCount > 0)
+        if (doc.Ignored.Count > 0)
+        {
+            sb.Append("<h2>숨긴 항목</h2><p>직접 숨긴(ignore) 항목 ").Append(doc.Ignored.Count.ToString(CultureInfo.InvariantCulture))
+                .Append("개는 위 목록에서 뺐어요. 숨긴 뒤로 더 위험해지거나 같은 위치의 파일이 바뀌면 다시 보여줘요.</p><ul class=\"hidden\">");
+            foreach (var i in doc.Ignored)
+            {
+                sb.Append("<li><code>").Append(E(i.Id)).Append("</code> [").Append(E(i.Severity.ToKorean())).Append("] ").Append(E(i.Title))
+                    .Append("<br>다시 보이게 하려면: ").Append(UndoHint(i.Id, doc.Scope, exeName, runDialog)).Append("</li>");
+            }
+
+            sb.Append("</ul>");
+        }
+        else if (doc.IgnoredCount > 0)
         {
             sb.Append("<p>사용자가 무시하도록 설정한 항목 ").Append(doc.IgnoredCount.ToString(CultureInfo.InvariantCulture)).Append("개는 숨겼어요.</p>");
         }
@@ -165,6 +194,15 @@ public static class HtmlReport
         }
 
         sb.Append("</p>\n");
+    }
+
+    /// <summary>숨김을 되돌리는(unignore) 명령 안내.</summary>
+    private static string UndoHint(string id, ScanScope scope, string exeName, bool runDialog)
+    {
+        var args = " unignore " + id + (scope == ScanScope.Admin ? " --scope admin" : string.Empty);
+        return runDialog
+            ? "<kbd>Win</kbd>+<kbd>R</kbd> → <code>" + E("safetysecurity" + args) + "</code>"
+            : "<code>" + E(exeName + args) + "</code>";
     }
 
     private static void Tile(StringBuilder sb, string label, int count, string cls) =>
@@ -209,7 +247,7 @@ public static class HtmlReport
                     {
                         sb.Append("\\x").Append(((int)c).ToString("X2", CultureInfo.InvariantCulture));
                     }
-                    else if (c is '‮' or '‭' or '‪' or '‫' or '‬' or '⁦' or '⁧' or '⁨' or '⁩')
+                    else if (DisplayText.IsBidiControl(c))
                     {
                         // 오른쪽→왼쪽 문자로 확장자를 숨기는 수법 (예: "invoice‮fdp.exe") 표시
                         sb.Append("[U+").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture)).Append(']');
@@ -238,6 +276,7 @@ public static class HtmlReport
         "Hosts" => "hosts 파일",
         "Wmi" => "WMI",
         "DroppedFile" => "새 실행 파일",
+        "Discord" => "디스코드",
         _ => category,
     };
 
@@ -272,6 +311,7 @@ main{max-width:980px;margin:0 auto;padding:24px 16px 64px}h1{font-size:24px;marg
 .cat{color:var(--muted);font-size:13px}dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:6px 0}dt{color:var(--muted)}dd{margin:0;min-width:0;word-break:break-all}
 code{background:var(--code);border-radius:4px;padding:1px 5px;font:13px/1.5 Consolas,"D2Coding",monospace;word-break:break-all}
 ul{margin:4px 0;padding-left:20px}details{margin-top:10px}summary{cursor:pointer;color:var(--muted)}.advice{margin:4px 0}.ignore{color:var(--muted);font-size:13px}
+.change{color:var(--new);margin:4px 0 8px}.hidden li{margin:6px 0;word-break:break-all}
 kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font:12px/1.5 Consolas,"D2Coding",monospace;background:var(--card)}
 .empty{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}.footer{margin-top:28px;color:var(--muted)}
 @media (max-width:600px){.summary{grid-template-columns:repeat(2,1fr)}dl{grid-template-columns:1fr}}
