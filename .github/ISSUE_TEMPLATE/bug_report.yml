@@ -1,11 +1,11 @@
 name: 버그 신고 / Bug report
-description: 프로그램이 오류가 나거나 이상하게 동작해요.
+description: 프로그램에 오류가 나거나 이상하게 동작합니다. / The program crashes or behaves strangely.
 title: "[버그] "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
-      value: "**사용자 이름 등 개인정보는 지우고 올려 주세요.**"
+      value: "**사용자 이름 등 개인정보는 지우고 올려 주세요. / Please remove your user name and other personal details before posting.**"
   - type: textarea
     id: what
     attributes:
@@ -17,7 +17,7 @@ body:
     attributes:
       label: 재현 방법 / Steps to reproduce
       placeholder: |
-        1. SafetySecurity.exe install
+        1. 시작 메뉴에서 SafetySecurity 실행 / Run SafetySecurity from the Start menu
         2. ...
     validations:
       required: true
@@ -25,23 +25,28 @@ body:
     id: log
     attributes:
       label: 로그 / Log
-      description: "%LOCALAPPDATA%\\SafetySecurity\\logs\\scan.log 마지막 부분, 또는 tools\\Test-OnMyPC.ps1 결과 파일"
+      description: "%LOCALAPPDATA%\\SafetySecurity\\logs\\scan.log 마지막 부분 또는 tools\\Test-OnMyPC.ps1 결과 파일 / The end of scan.log, or the tools\\Test-OnMyPC.ps1 result file (admin installs: C:\\Program Files\\SafetySecurity\\data\\logs\\scan.log)"
       render: text
   - type: input
     id: version
     attributes:
-      label: SafetySecurity 버전
+      label: SafetySecurity 버전 / version
+      placeholder: "safetysecurity version"
     validations:
       required: true
   - type: input
     id: windows
     attributes:
-      label: Windows 버전
-      placeholder: "예: Windows 11 24H2 (winver)"
+      label: Windows 버전 / version
+      placeholder: "예 / e.g. Windows 11 24H2 (winver)"
     validations:
       required: true
   - type: dropdown
     id: install
     attributes:
-      label: 설치 방식
-      options: ["install (사용자)", "install --admin (관리자)", "설치 안 함 (직접 실행)"]
+      label: 설치 방식 / Install mode
+      options:
+        - "설치 프로그램 - 내 계정에만 / Setup - my account only"
+        - "설치 프로그램 - 관리자 권한 / Setup - administrator"
+        - "명령줄 install (zip) / Command line install (zip)"
+        - "설치 안 함 (직접 실행) / Not installed (run directly)"

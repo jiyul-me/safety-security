@@ -35,24 +35,33 @@ if (-not $text) {
     exit 0
 }
 
-$heading = if ($section -eq 'Unreleased') { "> 사전 릴리스로, 다음 정식 버전에 들어갈 변경을 미리 시험하는 빌드다.`n`n" } else { '' }
+$heading = if ($section -eq 'Unreleased') { "> 사전 릴리스입니다. 다음 정식 버전에 들어갈 변경을 미리 시험하는 빌드입니다.`n>`n> Pre-release build for testing changes planned for the next version.`n`n" } else { '' }
 $setupName = "SafetySecurity-Setup-$Version.exe"
 $footer = @"
 
 ---
 
 ### 설치
-1. ``$setupName``를 받아 더블클릭한다.
-2. "Windows의 PC 보호" 창이 뜨면 '추가 정보' → '실행'을 누른다. 코드 서명 인증서가 아직 없어서 뜨는 창이다. 아래 방법으로 파일이 진짜인지 먼저 확인할 수 있다.
-3. 설치 방식(내 계정에만 / 관리자 권한으로)을 고르고 설치하면 끝이다. 시작 메뉴의 **SafetySecurity**로 언제든 검사하고, 설정 → 앱에서 제거한다.
-   이미 설치돼 있으면 묻지 않고 같은 방식으로 업데이트한다. 설치 방식을 바꾸려면 설정 → 앱에서 먼저 제거한 뒤 다시 설치하면 된다.
+1. ``$setupName``를 받아 더블클릭합니다.
+2. "Windows의 PC 보호" 창이 뜨면 '추가 정보' → '실행'을 누릅니다. 코드 서명 인증서가 아직 없어서 뜨는 창입니다. 아래 방법으로 파일이 진짜인지 먼저 확인할 수 있습니다.
+3. 설치 방식(내 계정에만 / 관리자 권한으로)을 고르고 설치하면 끝입니다. 바탕화면이나 시작 메뉴의 **SafetySecurity**로 언제든 검사하고, 설정 → 앱에서 제거합니다.
+   이미 설치돼 있으면 묻지 않고 같은 방식으로 업데이트합니다. 설치 방식을 바꾸려면 설정 → 앱에서 먼저 제거한 뒤 다시 설치합니다.
 
-명령줄로 쓰거나 내 PC 시험 스크립트가 필요하면 zip을 받으면 된다. 자세한 방법은 [README](https://github.com/$Repo#빠른-시작)와 [내 PC에서 시험하기](https://github.com/$Repo/blob/main/docs/TESTING-ON-YOUR-PC.md)를 참고한다.
+명령줄로 쓰거나 내 PC 시험 스크립트가 필요하면 zip을 받습니다. 자세한 방법은 [README](https://github.com/$Repo#빠른-시작)와 [내 PC에서 시험하기](https://github.com/$Repo/blob/main/docs/TESTING-ON-YOUR-PC.md)에 있습니다.
 
 ### 받은 파일 확인하기
 - ``SHA256SUMS.txt``와 비교: ``Get-FileHash .\$setupName -Algorithm SHA256``
 - 이 저장소의 GitHub Actions가 만든 파일인지 확인 (빌드 출처 증명): ``gh attestation verify .\$setupName --repo $Repo``
-- 설치된 실행 파일도 확인할 수 있다: ``gh attestation verify "`$env:LOCALAPPDATA\Programs\SafetySecurity\SafetySecurity.exe" --repo $Repo``
+- 설치된 실행 파일도 확인할 수 있습니다 (관리자 설치는 ``C:\Program Files\SafetySecurity\SafetySecurity.exe``): ``gh attestation verify "`$env:LOCALAPPDATA\Programs\SafetySecurity\SafetySecurity.exe" --repo $Repo``
+
+### English
+SafetySecurity is a read-only, offline scanner that finds the autostart traces malware leaves on Windows. The app's interface and reports are in Korean; the change list above is in Korean too.
+
+1. Download ``$setupName`` and double-click it.
+2. If "Windows protected your PC" appears, click "More info" → "Run anyway". It appears because the installer is not code-signed yet. You can verify the file first with the commands above.
+3. Choose *my account only* or *administrator* and install. Scan any time from the **SafetySecurity** shortcut on the desktop or in the Start menu, and uninstall from Settings → Apps. Running a newer Setup updates in place.
+
+The zip is for command-line use and the test script. See the [English README](https://github.com/$Repo/blob/main/README.en.md) for details.
 "@
 
 Set-Content -LiteralPath $Out -Value ($heading + $text + "`n" + $footer) -Encoding utf8
