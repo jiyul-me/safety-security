@@ -1,18 +1,21 @@
 name: 오탐 신고 / False positive
-description: 정상 프로그램인데 의심 항목으로 나왔어요.
+description: 정상 프로그램인데 의심 항목으로 나왔습니다. / A legitimate program was reported as suspicious.
 title: "[오탐] "
 labels: ["false-positive"]
 body:
   - type: markdown
     attributes:
       value: |
-        신고해 주셔서 고마워요! 오탐 신고는 규칙을 다듬는 데 가장 큰 도움이 돼요.
+        신고해 주셔서 감사합니다. 오탐 신고는 규칙을 다듬는 데 가장 큰 도움이 됩니다.
         **올리기 전에 사용자 이름, PC 이름, 개인 폴더 이름은 `<user>`처럼 지워 주세요.**
+
+        Thank you for reporting. False-positive reports help the most when tuning rules.
+        **Before posting, replace your user name, PC name and personal folder names with something like `<user>`.**
   - type: input
     id: rule
     attributes:
       label: 규칙 ID / Rule ID
-      description: 보고서 카드 오른쪽 위에 있어요 (예. COM-002, RUN-001).
+      description: 보고서 카드 오른쪽 위에 있습니다 (예. COM-002, RUN-001). / Shown at the top right of the report card (e.g. COM-002, RUN-001).
       placeholder: COM-002
     validations:
       required: true
@@ -20,28 +23,28 @@ body:
     id: severity
     attributes:
       label: 위험도 / Severity
-      options: ["높음 (High)", "보통 (Medium)", "낮음 (Low)"]
+      options: ["높음 (High)", "보통 (Medium)", "낮음 (Low)", "참고 (Info)"]
     validations:
       required: true
   - type: input
     id: program
     attributes:
       label: 어떤 프로그램인가요? / Which program is it?
-      placeholder: "예: Discord 1.0.9170, Steam, 회사 VPN"
+      placeholder: "예 / e.g. Discord 1.0.9170, Steam, 회사 VPN / company VPN"
     validations:
       required: true
   - type: textarea
     id: evidence
     attributes:
       label: 보고서 내용 / Report details
-      description: 위치, 대상, 서명 상태, 서명자를 붙여 넣어 주세요 (SHA-256도 있으면 좋아요).
+      description: 위치, 대상, 서명 상태, 서명자를 붙여 넣어 주세요 (SHA-256도 있으면 좋습니다). / Paste the location, target, signature status and signer (and the SHA-256 if available).
       render: text
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: SafetySecurity 버전
-      placeholder: "SafetySecurity.exe version 결과"
+      label: SafetySecurity 버전 / version
+      placeholder: "safetysecurity version"
     validations:
       required: true
