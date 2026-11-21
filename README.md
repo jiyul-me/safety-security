@@ -21,7 +21,7 @@
 
 <p align="center">
   <a href="#빠른-시작">빠른 시작</a> ·
-  <a href="#무엇을-검사하나요">검사 항목</a> ·
+  <a href="#검사-항목">검사 항목</a> ·
   <a href="docs/DETECTIONS.md">탐지 규칙</a> ·
   <a href="docs/TESTING-ON-YOUR-PC.md">PC에서 시험하기</a> ·
   <a href="docs/ARCHITECTURE.md">구조</a> ·
@@ -43,7 +43,7 @@ PowerShell은 필요 없다.
 2. 받은 파일을 더블클릭한다. "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누른다 ([창이 뜨는 이유](#설치)).
 3. 설치 방식을 고른다.
    - **내 계정에만** (권장): 권한 요청 없이 바로 설치된다.
-   - **관리자 권한으로**: Defender 제외 목록, 숨겨진 예약 작업, WMI 구독까지 검사한다. 권한 요청 창이 뜬다. 관리자 계정으로 로그인했을 때만 고른다 ([이유](#한계-꼭-읽어-주세요)).
+   - **관리자 권한으로**: Defender 제외 목록, 숨겨진 예약 작업, WMI 구독까지 검사한다. 권한 요청 창이 뜬다. 관리자 계정으로 로그인했을 때만 고른다 ([이유](#한계-꼭-읽을-것)).
 4. 추가 작업 화면의 **바탕화면 바로가기 만들기**는 기본으로 켜져 있다. 필요 없으면 끈다.
 5. 마지막 화면에서 **지금 첫 검사하기**를 켜 둔 채 마침을 누르면, 검사가 끝난 뒤 보고서가 열린다.
 
@@ -91,7 +91,7 @@ PowerShell은 필요 없다.
 - [`BannedSymbols.txt`](BannedSymbols.txt): 네트워크, 레지스트리 쓰기, 파일 삭제, 다른 프로세스 접근 API를 쓰면 **빌드가 실패**한다.
 - [`ForbiddenApiTests.cs`](tests/SafetySecurity.Core.Tests/ForbiddenApiTests.cs): `OpenProcess`, `WriteProcessMemory`, `SetWindowsHookEx` 같은 Win32 함수를 선언하면 **테스트가 실패**한다.
 
-## 무엇을 검사하나요?
+## 검사 항목
 
 규칙 ID별 자세한 설명은 [docs/DETECTIONS.md](docs/DETECTIONS.md)에 있다.
 
@@ -133,7 +133,7 @@ PowerShell은 필요 없다.
 ```powershell
 Get-FileHash .\SafetySecurity-Setup-x.y.z.exe -Algorithm SHA256   # SHA256SUMS.txt와 비교
 gh attestation verify .\SafetySecurity-Setup-x.y.z.exe --repo jiyul-me/safety-security
-# 설치된 실행 파일도 확인할 수 있어요 (관리자 설치면 C:\Program Files\SafetySecurity\SafetySecurity.exe)
+# 설치된 실행 파일도 확인할 수 있다 (관리자 설치면 C:\Program Files\SafetySecurity\SafetySecurity.exe)
 gh attestation verify "$env:LOCALAPPDATA\Programs\SafetySecurity\SafetySecurity.exe" --repo jiyul-me/safety-security
 ```
 
@@ -148,7 +148,7 @@ gh attestation verify "$env:LOCALAPPDATA\Programs\SafetySecurity\SafetySecurity.
 2. 설치한다. 실행 파일을 위 표의 위치로 복사하고 작업을 등록한다.
    ```powershell
    .\SafetySecurity.exe install           # 내 계정에만
-   .\SafetySecurity.exe install --admin   # 관리자 검사도 추가 (UAC 창이 떠요)
+   .\SafetySecurity.exe install --admin   # 관리자 검사도 추가 (UAC 창이 뜬다)
    ```
 3. 제거할 때는 `.\SafetySecurity.exe uninstall`(관리자 설치였다면 관리자 PowerShell)을 실행하고, 위 표의 폴더를 지운다. 관리자 PowerShell에서 실행한 `uninstall --purge`는 관리자 검사 기록(`C:\Program Files\SafetySecurity\data`)만 지우고, 내 계정의 `%LOCALAPPDATA%\SafetySecurity`는 남긴다.
 
@@ -176,16 +176,16 @@ gh attestation verify "$env:LOCALAPPDATA\Programs\SafetySecurity\SafetySecurity.
 ## 사용법
 
 ```
-SafetySecurity.exe                    지금 검사하고 보고서 열기 (더블클릭·바탕화면·시작 메뉴와 같아요)
+SafetySecurity.exe                    지금 검사하고 보고서 열기 (더블클릭·바탕화면·시작 메뉴와 같다)
 SafetySecurity.exe scan --force       게임 중이어도 지금 검사
 SafetySecurity.exe status             마지막 검사, 미뤄둔 검사, 등록된 작업, 알림 설정
 SafetySecurity.exe report             마지막 보고서 열기
-SafetySecurity.exe ignore <ID>        항목 숨기기 (ID는 보고서에 있어요. 앞 8자리 이상만 적어도 돼요)
+SafetySecurity.exe ignore <ID>        항목 숨기기 (ID는 보고서에 있다. 앞 8자리 이상만 적어도 된다)
 SafetySecurity.exe ignored            숨긴 항목 목록 (사용자·관리자 검사 모두)
 SafetySecurity.exe unignore <ID>      숨긴 항목을 다시 보이게 하기
-SafetySecurity.exe verify <파일>      파일 하나의 디지털 서명 확인 (네트워크 경로는 거절해요)
+SafetySecurity.exe verify <파일>      파일 하나의 디지털 서명 확인 (네트워크 경로는 거절한다)
 SafetySecurity.exe test-notify        알림이 뜨는지 시험
-SafetySecurity.exe help               도움말 (--help, -h, /?도 돼요)
+SafetySecurity.exe help               도움말 (--help, -h, /?도 된다)
 SafetySecurity.exe uninstall [--purge]
 ```
 
@@ -222,7 +222,7 @@ Windows 알림이 꺼져 있으면(이 앱만, 모든 앱, 회사·학교 정책
 }
 ```
 
-## 한계 (꼭 읽어 주세요)
+## 한계 (꼭 읽을 것)
 
 - **백신이 아니다.** 파일 내용을 악성코드 시그니처와 비교하지 않는다. Windows Defender 같은 백신과 *함께* 쓰는 도구다.
 - 결과는 "의심"이지 "확정"이 아니다. 정상 프로그램도 걸릴 수 있고, 아주 정교한 악성코드는 못 찾을 수도 있다.
@@ -236,15 +236,15 @@ Windows 알림이 꺼져 있으면(이 앱만, 모든 앱, 회사·학교 정책
 필요한 것: [.NET 10 SDK](https://dotnet.microsoft.com/download)
 
 ```bash
-dotnet build SafetySecurity.slnx           # macOS·Linux에서도 돼요
-dotnet test tests/SafetySecurity.Core.Tests # 규칙 테스트 (macOS·Linux에서도 돼요)
+dotnet build SafetySecurity.slnx           # macOS·Linux에서도 된다
+dotnet test tests/SafetySecurity.Core.Tests # 규칙 테스트 (macOS·Linux에서도 된다)
 ```
 
 Windows에서 NativeAOT 단일 exe 만들기 (Visual Studio의 "C++를 사용한 데스크톱 개발" 구성 요소가 필요하다):
 
 ```powershell
 dotnet publish src/SafetySecurity -c Release -r win-x64 -o out
-pwsh tests/integration/Run-Integration.ps1 -Exe out/SafetySecurity.exe   # 통합 테스트 (HKCU에 가짜 항목을 만들었다가 지워요)
+pwsh tests/integration/Run-Integration.ps1 -Exe out/SafetySecurity.exe   # 통합 테스트 (HKCU에 가짜 항목을 만들었다가 지운다)
 ```
 
 macOS에서 Windows용 exe를 만들고 싶으면 NativeAOT 대신 이렇게 한다 (파일은 조금 더 크지만 기능은 같다).
